@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, CheckSquare, DollarSign, Building2, TrendingUp,
-  Layers, Headphones, BarChart2, Mail, MessageSquare, MessageCircle, Radio, Server, Brain, Bell,
+  Layers, Headphones, BarChart2, Mail, MessageSquare, MessageCircle, Radio, Server, Brain, Bell, FileText,
 } from 'lucide-react'
 
 const sections = [
@@ -21,8 +21,9 @@ const sections = [
   {
     label: 'Operações',
     items: [
-      { href: '/ia',        label: 'Resumo Executivo',  icon: Brain },
-      { href: '/operacoes', label: 'Torre de Ops',  icon: Radio },
+      { href: '/ia',                   label: 'Resumo Executivo',    icon: Brain },
+      { href: '/reports/executive-daily', label: 'Daily Report',        icon: FileText },
+      { href: '/operacoes',            label: 'Torre de Ops',        icon: Radio },
       { href: '/zabbix',    label: 'Zabbix',       icon: Server },
       { href: '/jira',      label: 'Jira',         icon: Layers },
       { href: '/glpi',      label: 'GLPI',         icon: Headphones },

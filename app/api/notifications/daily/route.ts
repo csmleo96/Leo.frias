@@ -220,17 +220,23 @@ async function sendEmail(kpis: any, status: string, summaryLines: string[]) {
     })
 
     const html = generateEmailHTML(kpis, status, summaryLines)
-    const to = process.env.NOTIFICATION_EMAIL_TO || process.env.SMTP_USER
+
+    // Parse multiple recipients separated by comma
+    const emailList = (process.env.NOTIFICATION_EMAIL_TO || process.env.SMTP_USER)
+      .split(',')
+      .map(e => e.trim())
+      .filter(Boolean)
+    const toList = emailList.join(', ')
 
     const info = await transporter.sendMail({
       from: `"CS Cockpit" <${process.env.SMTP_USER}>`,
-      to,
+      to: toList,
       subject: `📊 Executive Board Report — ${new Date().toLocaleDateString('pt-BR')}`,
       html,
     })
 
-    console.log('✅ Email enviado:', info.messageId)
-    return { ok: true, to }
+    console.log('✅ Email enviado para:', emailList.join('; '), 'MessageID:', info.messageId)
+    return { ok: true, to: emailList, count: emailList.length }
   } catch (error) {
     console.error('❌ Erro ao enviar email:', error)
     return { ok: false, error: String(error) }
