@@ -350,108 +350,157 @@ function generateReportHTML(report: any): string {
 </html>`
 }
 
-// ── Send Email ─────────────────────────────────────────────────────────────
-async function sendEmail(html: string) {
+// ── Send Email com Retentativa ────────────────────────────────────────────
+async function sendEmail(html: string, maxRetries = 3): Promise<any> {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     console.warn('⚠️  SMTP não configurado')
     return { ok: false, reason: 'SMTP not configured' }
   }
 
-  try {
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT || '587'),
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    })
+  let lastError: any = null
 
-    const emailList = (process.env.NOTIFICATION_EMAIL_TO || process.env.SMTP_USER)
-      .split(',')
-      .map(e => e.trim())
-      .filter(Boolean)
-    const toList = emailList.join(', ')
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || '587'),
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      })
 
-    const info = await transporter.sendMail({
-      from: `"CS Cockpit" <${process.env.SMTP_USER}>`,
-      to: toList,
-      subject: `📊 Executive Daily Report — ${new Date().toLocaleDateString('pt-BR')}`,
-      html,
-    })
+      const emailList = (process.env.NOTIFICATION_EMAIL_TO || process.env.SMTP_USER)
+        .split(',')
+        .map(e => e.trim())
+        .filter(Boolean)
+      const toList = emailList.join(', ')
+      const date = new Date().toLocaleDateString('pt-BR', {
+        weekday: 'long',
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      })
 
-    console.log('✅ Executive Daily Report enviado:', emailList.join('; '))
-    return { ok: true, to: emailList, count: emailList.length, messageId: info.messageId }
-  } catch (error) {
-    console.error('❌ Erro ao enviar email:', error)
-    return { ok: false, error: String(error) }
+      const info = await transporter.sendMail({
+        from: `"CS Cockpit" <${process.env.SMTP_USER}>`,
+        to: toList,
+        subject: `[Relatório Executivo Diário] Operações e Projetos — ${date}`,
+        html,
+      })
+
+      console.log(`✅ Executive Daily Report enviado na tentativa ${attempt}:`, emailList.join('; '))
+      return { ok: true, to: emailList, count: emailList.length, messageId: info.messageId, attempt }
+    } catch (error) {
+      lastError = error
+      console.warn(`⚠️  Tentativa ${attempt}/${maxRetries} falhou:`, String(error))
+
+      // Aguardar antes de retentativa (backoff exponencial)
+      if (attempt < maxRetries) {
+        const delay = Math.pow(2, attempt - 1) * 1000 // 1s, 2s, 4s
+        await new Promise(resolve => setTimeout(resolve, delay))
+      }
+    }
   }
+
+  console.error('❌ Erro ao enviar email após ', maxRetries, ' tentativas:', lastError)
+  return { ok: false, error: String(lastError), attempts: maxRetries }
 }
 
 // ── Main Handler ───────────────────────────────────────────────────────────
 export async function GET() {
   const sb = await createClient()
   const startTime = Date.now()
+  const executedAt = new Date().toISOString()
 
   try {
-    console.log('🚀 Enviando Executive Daily Report...')
+    console.log('🚀 [', executedAt, '] Iniciando envio de Executive Daily Report...')
 
     // Get report
     const report = await getExecutiveReport()
     if (!report) {
-      throw new Error('Falha ao gerar relatório')
+      throw new Error('Falha ao gerar relatório executivo')
     }
 
     // Generate HTML
     const html = generateReportHTML(report)
 
-    // Send email
+    // Send email with retries
     const emailResult = await sendEmail(html)
 
-    // Log
+    // Calculate metrics
     const deliveryTime = Date.now() - startTime
+    const status = emailResult.ok ? 'success' : 'failed'
+    const attempts = emailResult.attempt || emailResult.attempts || 1
+
+    // Log to database
     try {
       await sb.from('audit_log').insert({
         action: 'executive_daily_report_sent',
         module: 'reports',
-        description: `Executive Daily Report enviado — ${report.health} (${report.metrics?.totalOpen || 0} abertos)`,
+        description: `Executive Daily Report enviado — ${report.health} (${report.metrics?.totalOpen || 0} abertos, ${attempts} tentativa(s))`,
+        error_message: emailResult.ok ? null : emailResult.error,
         metadata: {
           health: report.health,
-          recipients: emailResult.to,
+          status,
+          recipients: emailResult.to || [],
           deliveryTime,
-          metrics: report.metrics,
+          attempts,
+          messageId: emailResult.messageId,
+          metrics: {
+            totalOpen: report.metrics?.totalOpen,
+            totalCritical: report.metrics?.totalCritical,
+            jiraOverdue: report.metrics?.jiraOverdue,
+            glpiUnattended: report.metrics?.glpiUnattended,
+          },
         },
-        level: report.health === 'critical' ? 'warning' : 'info',
+        level: !emailResult.ok ? 'error' : report.health === 'critical' ? 'warning' : 'info',
       })
     } catch (logError) {
       console.warn('⚠️  Erro ao registrar log:', logError)
     }
 
-    console.log(`✅ Executive Daily Report finalizado em ${deliveryTime}ms`)
+    console.log(`✅ Executive Daily Report finalizado em ${deliveryTime}ms (status: ${status}, tentativas: ${attempts})`)
 
     return NextResponse.json({
-      ok: true,
+      ok: emailResult.ok,
+      status,
       report: report.health,
       email: emailResult,
       deliveryTime,
+      attempts,
+      executedAt,
     })
   } catch (error) {
-    console.error('❌ Erro ao enviar Daily Report:', error)
+    const deliveryTime = Date.now() - startTime
+    const errorMsg = String(error)
 
-    // Log error
+    console.error(`❌ [${executedAt}] Falha ao enviar Daily Report após ${deliveryTime}ms:`, errorMsg)
+
+    // Log error to database
     try {
       await sb.from('audit_log').insert({
         action: 'executive_daily_report_failed',
         module: 'reports',
-        description: `Falha ao enviar Executive Daily Report: ${String(error)}`,
-        error_message: String(error),
+        description: `Falha ao enviar Executive Daily Report: ${errorMsg}`,
+        error_message: errorMsg,
+        metadata: {
+          deliveryTime,
+          executedAt,
+        },
         level: 'error',
       })
     } catch (logError) {
-      console.warn('⚠️  Erro ao registrar log de erro:', logError)
+      console.warn('⚠️  Erro ao registrar log de falha:', logError)
     }
 
-    return NextResponse.json({ ok: false, error: String(error) }, { status: 500 })
+    return NextResponse.json({
+      ok: false,
+      status: 'failed',
+      error: errorMsg,
+      deliveryTime,
+      executedAt,
+    }, { status: 500 })
   }
 }

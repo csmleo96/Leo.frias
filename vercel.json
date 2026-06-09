@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/reports/executive-daily-send",
-      "schedule": "0 11 * * *"
+      "schedule": "0 12 * * *"
     }
   ]
 }

@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, CheckSquare, DollarSign, Building2, TrendingUp,
-  Layers, Headphones, BarChart2, Mail, MessageSquare, MessageCircle, Radio, Server, Brain, Bell, FileText,
+  Layers, Headphones, BarChart2, Mail, MessageSquare, MessageCircle, Radio, Server, Brain, Bell, FileText, Clock,
 } from 'lucide-react'
 
 const sections = [
@@ -23,6 +23,7 @@ const sections = [
     items: [
       { href: '/ia',                   label: 'Resumo Executivo',    icon: Brain },
       { href: '/reports/executive-daily', label: 'Daily Report',        icon: FileText },
+      { href: '/reports/scheduled', label: 'Agendamento',        icon: Clock },
       { href: '/operacoes',            label: 'Torre de Ops',        icon: Radio },
       { href: '/zabbix',    label: 'Zabbix',       icon: Server },
       { href: '/jira',      label: 'Jira',         icon: Layers },
