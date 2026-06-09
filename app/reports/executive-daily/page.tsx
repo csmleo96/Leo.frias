@@ -2,84 +2,52 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { useState, memo } from 'react'
-import {
-  RefreshCw, AlertTriangle, CheckCircle2, TrendingDown, Clock, Users, Zap,
-  AlertCircle, ChevronRight, Download, Share2, BarChart3,
-} from 'lucide-react'
+import { RefreshCw, Loader2, ExternalLink, AlertTriangle, CheckCircle2, TrendingDown, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 
-// ── Constants ──────────────────────────────────────────────────────────────
 const T = '#8fbfc2'
 const CARD = '#0d1a1e'
 const BORDER = 'rgba(143,191,194,0.10)'
 const MUTED = 'rgba(243,250,250,0.45)'
 const H = { fontFamily: 'var(--font-heading), "Space Grotesk", sans-serif' }
 
-// ── Skeleton ───────────────────────────────────────────────────────────────
-const Sk = memo(({ w = '100%', h = '16px', r = '6px' }: any) => (
-  <div style={{
-    width: w, height: h, borderRadius: r,
-    background: 'linear-gradient(90deg, rgba(143,191,194,0.06) 25%, rgba(143,191,194,0.12) 50%, rgba(143,191,194,0.06) 75%)',
-    backgroundSize: '200% 100%', animation: 'shimmer 1.6s infinite',
-  }} />
-))
+interface Ticket {
+  key: string
+  summary: string
+  status: string
+  priority: string
+  assignee: string
+  dueDate: string | null
+  url: string
+  isCompleted: boolean
+  isOverdue: boolean
+  isDueSoon: boolean
+  daysUntilDue: number | null
+}
 
-// ── Health Badge ───────────────────────────────────────────────────────────
-const HealthBadge = memo(function HealthBadge({ health }: any) {
-  const config = {
-    healthy: { emoji: '🟢', label: 'HEALTHY', color: '#7dd3a8', bg: 'rgba(125,211,168,0.08)' },
-    attention: { emoji: '🟡', label: 'ATTENTION', color: '#fbbf24', bg: 'rgba(251,191,36,0.08)' },
-    critical: { emoji: '🔴', label: 'CRITICAL', color: '#f87171', bg: 'rgba(248,113,113,0.08)' },
-  }[health] || config.healthy
+interface Project {
+  key: string
+  name: string
+  total: number
+  open: number
+  completed: number
+  inProgress: number
+  critical: number
+  overdue: number
+  dueSoon: number
+  unassigned: number
+  tickets: Ticket[]
+}
 
-  return (
-    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full" style={{ background: config.bg, border: `1px solid ${config.color}30` }}>
-      <span className="text-xl">{config.emoji}</span>
-      <span className="font-bold text-sm uppercase tracking-wide" style={{ color: config.color }}>{config.label}</span>
-    </div>
-  )
-})
+interface CriticalItem {
+  key: string
+  summary: string
+  project: string
+  priority: string
+  assignee: string
+  issue: string
+}
 
-// ── Metric Card ────────────────────────────────────────────────────────────
-const MetricCard = memo(function MetricCard({ label, value, color, icon: Icon, subtext }: any) {
-  return (
-    <div className="rounded-xl p-5 flex flex-col gap-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase" style={{ color: MUTED }}>{label}</span>
-        <Icon size={16} style={{ color }} />
-      </div>
-      <p className="text-3xl font-bold tabular-nums" style={{ ...H, color }}>{value}</p>
-      {subtext && <p className="text-[10px]" style={{ color: MUTED }}>{subtext}</p>}
-    </div>
-  )
-})
-
-// ── Risk Card ──────────────────────────────────────────────────────────────
-const RiskCard = memo(function RiskCard({ risk }: any) {
-  const colorMap = { critical: '#f87171', high: '#fbbf24', medium: '#fb923c', low: '#7dd3a8' }
-  const color = colorMap[risk.severity as keyof typeof colorMap] || colorMap.low
-  const Icon = AlertTriangle
-
-  return (
-    <div className="rounded-lg p-4 border" style={{ background: CARD, borderColor: `${color}30` }}>
-      <div className="flex items-start gap-3">
-        <Icon size={16} style={{ color, flexShrink: 0 }} className="mt-0.5" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold" style={{ color: '#f3fafa' }}>{risk.title}</p>
-          <p className="text-[11px] mt-1 leading-relaxed" style={{ color: MUTED }}>{risk.description}</p>
-          <div className="mt-2 flex items-start gap-2">
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full mt-0.5" style={{ background: `${color}15`, color }}>
-              {risk.severity.toUpperCase()}
-            </span>
-          </div>
-          <p className="text-[10px] mt-1" style={{ color }}>💡 {risk.action}</p>
-        </div>
-      </div>
-    </div>
-  )
-})
-
-// ── Main Page ──────────────────────────────────────────────────────────────
 export default function ExecutiveDailyReportPage() {
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['executive-daily-report'],
@@ -88,192 +56,272 @@ export default function ExecutiveDailyReportPage() {
   })
 
   const report = data || {}
-  const health = report.health || 'healthy'
   const metrics = report.metrics || {}
   const jira = report.jira || {}
   const glpi = report.glpi || {}
   const risks = report.risks || []
   const recommendations = report.recommendations || []
-  const summary = report.executiveSummary || ''
+  const projectsData = jira.projectsData || {}
+  const criticalItems = jira.criticalItems || []
+
+  const projectsList: Project[] = Object.values(projectsData)
+  const projectsCount = projectsList.length
 
   return (
-    <>
-      <style>{`
-        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-      `}</style>
-
-      <div className="p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
-
-        {/* Header */}
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-4xl font-bold" style={{ ...H, color: '#f3fafa' }}>
-              Executive Daily Report
-            </h1>
-            <p className="text-sm mt-2" style={{ color: MUTED }}>
-              {isLoading ? 'Carregando...' : new Date(report.generatedAt).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {isLoading ? (
-              <div className="animate-spin"><RefreshCw size={20} style={{ color: MUTED }} /></div>
-            ) : (
-              <>
-                <button onClick={() => refetch()} className="p-2 rounded-lg hover:bg-white/5 transition-all" style={{ color: MUTED }}>
-                  <RefreshCw size={18} />
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Health Status */}
-        {!isLoading && <HealthBadge health={health} />}
-
-        {/* Executive Summary */}
-        <div className="rounded-xl p-6 lg:p-8" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-          <p className="text-sm font-bold mb-3 uppercase tracking-wide" style={{ ...H, color: MUTED }}>Executive Summary</p>
-          {isLoading ? (
-            <div className="space-y-3"><Sk /><Sk w="95%" /><Sk w="90%" /></div>
-          ) : (
-            <p className="text-base leading-relaxed" style={{ color: '#f3fafa' }}>{summary}</p>
-          )}
-        </div>
-
-        {/* Key Metrics Grid */}
+    <div className="p-6 lg:p-8 max-w-7xl mx-auto space-y-8">
+      {/* Header */}
+      <div className="flex items-start justify-between">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest mb-3 flex items-center gap-1.5" style={{ color: MUTED }}>
-            <BarChart3 size={10} /> Principais Indicadores
+          <h1 className="text-4xl font-bold" style={{ ...H, color: '#f3fafa' }}>
+            Executive Daily Report
+          </h1>
+          <p className="text-sm mt-2" style={{ color: MUTED }}>
+            {isLoading ? 'Carregando...' : 'Visão Consolidada com Detalhamento de Projetos'}
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <MetricCard label="Total Aberto" value={metrics.totalOpen || 0} color={T} icon={AlertCircle} subtext={`${metrics.totalCritical || 0} críticos`} />
-            <MetricCard label="Resolvidos" value={metrics.totalResolved || 0} color="#7dd3a8" icon={CheckCircle2} subtext={`${metrics.jiraCompleted || 0} hoje`} />
-            <MetricCard label="Vencidos" value={(metrics.jiraOverdue || 0) + (metrics.glpiUnattended || 0)} color="#f87171" icon={TrendingDown} subtext="Exigem ação" />
-            <MetricCard label="Sem Responsável" value={metrics.jiraUnassigned || 0} color="#fbbf24" icon={Users} subtext="Jira" />
-          </div>
         </div>
+        <button
+          onClick={() => refetch()}
+          disabled={isLoading}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-all"
+          style={{
+            background: T,
+            color: '#0a1316',
+            cursor: isLoading ? 'not-allowed' : 'pointer',
+            opacity: isLoading ? 0.7 : 1,
+          }}
+        >
+          <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+          {isLoading ? 'Atualizando...' : 'Atualizar'}
+        </button>
+      </div>
 
-        {/* Jira Section */}
-        <div className="rounded-xl p-6" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-          <div className="flex items-center gap-2 mb-4">
-            <BarChart3 size={16} style={{ color: T }} />
-            <p className="text-lg font-bold" style={{ ...H, color: '#f3fafa' }}>Jira — Delivery Status</p>
-          </div>
-          {isLoading ? (
-            <Sk h="40px" />
-          ) : (
-            <div className="space-y-4">
-              {jira.completedDetails && jira.completedDetails.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold uppercase mb-2" style={{ color: MUTED }}>Concluídas Hoje ({jira.completedDetails.length})</p>
-                  <div className="space-y-1">
-                    {jira.completedDetails.map((item: any, i: number) => (
-                      <div key={i} className="flex items-center justify-between p-2 rounded" style={{ background: 'rgba(125,211,168,0.08)', border: '1px solid rgba(125,211,168,0.15)' }}>
-                        <span className="text-xs font-mono" style={{ color: T }}>{item.key}</span>
-                        <span className="text-xs truncate mx-2 flex-1" style={{ color: '#f3fafa' }}>{item.summary.substring(0, 40)}</span>
-                        <span className="text-[10px]" style={{ color: MUTED }}>{item.assignee}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {jira.overdueDetails && jira.overdueDetails.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold uppercase mb-2" style={{ color: '#f87171' }}>Vencidas ({jira.overdueDetails.length})</p>
-                  <div className="space-y-1">
-                    {jira.overdueDetails.slice(0, 5).map((item: any, i: number) => (
-                      <div key={i} className="flex items-center justify-between p-2 rounded" style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.15)' }}>
-                        <span className="text-xs font-mono" style={{ color: '#f87171' }}>{item.key}</span>
-                        <span className="text-xs truncate mx-2 flex-1" style={{ color: '#f3fafa' }}>{item.summary.substring(0, 40)}</span>
-                        <span className="text-[10px] font-bold" style={{ color: '#f87171' }}>+{Math.abs(item.daysOverdue)}d</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {jira.criticalDetails && jira.criticalDetails.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold uppercase mb-2" style={{ color: '#fbbf24' }}>Críticas em Aberto ({jira.criticalDetails.length})</p>
-                  <div className="space-y-1">
-                    {jira.criticalDetails.slice(0, 5).map((item: any, i: number) => (
-                      <div key={i} className="flex items-center justify-between p-2 rounded" style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.15)' }}>
-                        <span className="text-xs font-mono" style={{ color: '#fbbf24' }}>{item.key}</span>
-                        <span className="text-xs truncate mx-2 flex-1" style={{ color: '#f3fafa' }}>{item.summary.substring(0, 40)}</span>
-                        <span className="text-[10px]" style={{ color: MUTED }}>{item.assignee}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* GLPI Section */}
-        <div className="rounded-xl p-6" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-          <div className="flex items-center gap-2 mb-4">
-            <AlertCircle size={16} style={{ color: '#a78bfa' }} />
-            <p className="text-lg font-bold" style={{ ...H, color: '#f3fafa' }}>GLPI — Operational Overview</p>
-          </div>
-          {isLoading ? (
-            <Sk h="40px" />
-          ) : (
+      {!isLoading && (
+        <>
+          {/* Resumo Geral Consolidado */}
+          <div>
+            <h2 className="text-sm font-bold uppercase mb-4" style={{ ...H, color: MUTED, letterSpacing: '0.12em' }}>
+              Resumo Geral Consolidado
+            </h2>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               {[
-                { label: 'Total', value: glpi.total, color: T },
-                { label: 'Abertos', value: glpi.open, color: '#fb923c' },
-                { label: 'Críticos', value: glpi.critical, color: '#f87171' },
-                { label: 'Pendentes', value: glpi.pending, color: '#fbbf24' },
-                { label: 'Sem Atendimento', value: glpi.unattended, color: '#f87171' },
-              ].map(m => (
-                <div key={m.label} className="rounded p-3 text-center" style={{ background: 'rgba(0,0,0,0.3)', border: `1px solid ${BORDER}` }}>
-                  <p className="text-2xl font-bold tabular-nums" style={{ color: m.color }}>{m.value}</p>
-                  <p className="text-[10px] mt-1" style={{ color: MUTED }}>{m.label}</p>
+                { label: 'Total de Tickets', value: metrics.totalOpen || 0, color: T },
+                { label: 'Em Andamento', value: metrics.inProgress || 0, color: '#8fbfc2' },
+                { label: 'Concluídos Hoje', value: metrics.jiraCompleted || 0, color: '#7dd3a8' },
+                { label: 'Atrasados', value: metrics.jiraOverdue || 0, color: '#f87171' },
+                { label: 'Próximos 3 dias', value: jira.dueSoon || 0, color: '#fbbf24' },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="rounded-xl p-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  <p className="text-xs" style={{ color: MUTED }}>{label}</p>
+                  <p className="text-3xl font-bold mt-2" style={{ color }}>{value}</p>
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Itens Críticos */}
+          {criticalItems.length > 0 && (
+            <div>
+              <h2 className="text-sm font-bold uppercase mb-4" style={{ ...H, color: MUTED, letterSpacing: '0.12em' }}>
+                Itens Críticos ({criticalItems.length})
+              </h2>
+              <div className="rounded-xl p-6 overflow-x-auto" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <table className="w-full text-sm">
+                  <thead style={{ borderBottom: `1px solid ${BORDER}` }}>
+                    <tr>
+                      {['Status', 'Ticket', 'Título', 'Projeto', 'Prioridade', 'Responsável'].map(h => (
+                        <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase" style={{ color: MUTED }}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {criticalItems.map((item: CriticalItem, i) => (
+                      <tr key={item.key} style={{ borderTop: i > 0 ? `1px solid ${BORDER}` : 'none' }}>
+                        <td className="px-4 py-3">{item.issue}</td>
+                        <td className="px-4 py-3 font-mono font-bold" style={{ color: T }}>{item.key}</td>
+                        <td className="px-4 py-3 max-w-xs">{item.summary.substring(0, 50)}</td>
+                        <td className="px-4 py-3">{item.project}</td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs px-2 py-1 rounded" style={{
+                            background: item.priority === 'High' || item.priority === 'Highest' ? 'rgba(248,113,113,0.2)' : 'rgba(251,191,36,0.2)',
+                            color: item.priority === 'High' || item.priority === 'Highest' ? '#f87171' : '#fbbf24',
+                          }}>
+                            {item.priority}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">{item.assignee}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )}
-        </div>
 
-        {/* Risks Section */}
-        {risks.length > 0 && (
+          {/* Projetos Detalhados */}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest mb-3 flex items-center gap-1.5" style={{ color: MUTED }}>
-              <Zap size={10} /> Executive Risks ({risks.length})
-            </p>
-            <div className="space-y-3">
-              {isLoading ? (
-                [...Array(2)].map((_, i) => <Sk key={i} h="100px" r="8px" />)
-              ) : (
-                risks.map((risk: any, i: number) => <RiskCard key={i} risk={risk} />)
-              )}
-            </div>
-          </div>
-        )}
+            <h2 className="text-sm font-bold uppercase mb-4" style={{ ...H, color: MUTED, letterSpacing: '0.12em' }}>
+              Jira Projects ({projectsCount} projetos)
+            </h2>
 
-        {/* Recommendations */}
-        {recommendations.length > 0 && (
-          <div className="rounded-xl p-6" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <p className="text-sm font-bold mb-4 uppercase tracking-wide" style={{ ...H, color: MUTED }}>Executive Recommendations</p>
-            <div className="space-y-2">
-              {isLoading ? (
-                [...Array(3)].map((_, i) => <Sk key={i} h="20px" w="80%" />)
-              ) : (
-                recommendations.map((rec: string, i: number) => (
-                  <div key={i} className="flex items-start gap-2 p-2">
-                    <ChevronRight size={14} className="mt-0.5 shrink-0" style={{ color: T }} />
-                    <p className="text-sm leading-relaxed" style={{ color: '#f3fafa' }}>{rec}</p>
+            <div className="space-y-6">
+              {projectsList.map((project: Project) => (
+                <div key={project.key} className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  {/* Project Header */}
+                  <div className="p-6 border-b" style={{ borderColor: BORDER }}>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-bold" style={{ ...H, color: '#f3fafa' }}>
+                        {project.name}
+                      </h3>
+                      <span className="text-sm px-3 py-1 rounded-full" style={{ background: `${T}20`, color: T, fontWeight: 'bold' }}>
+                        {project.total} tickets
+                      </span>
+                    </div>
+
+                    {/* Project Metrics */}
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-sm">
+                      {[
+                        { label: 'Em Andamento', value: project.inProgress, color: '#8fbfc2' },
+                        { label: 'Concluído Hoje', value: project.completed, color: '#7dd3a8' },
+                        { label: 'Atrasados', value: project.overdue, color: '#f87171' },
+                        { label: 'Próx. 3 dias', value: project.dueSoon, color: '#fbbf24' },
+                        { label: 'Sem Responsável', value: project.unassigned, color: '#fb923c' },
+                        { label: 'Críticos', value: project.critical, color: '#ef4444' },
+                      ].map(({ label, value, color }) => (
+                        <div key={label} className="rounded p-2" style={{ background: 'rgba(0,0,0,0.2)' }}>
+                          <p className="text-xs" style={{ color: MUTED }}>{label}</p>
+                          <p className="text-lg font-bold mt-1" style={{ color }}>{value}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Status Geral */}
+                    <div className="mt-4 flex items-center gap-2">
+                      <span className="text-xs font-semibold uppercase" style={{ color: MUTED }}>Status Geral:</span>
+                      <span className="text-sm font-bold px-3 py-1 rounded" style={{
+                        background: project.overdue > 0 ? 'rgba(248,113,113,0.2)' : project.dueSoon > 0 ? 'rgba(251,191,36,0.2)' : 'rgba(125,211,168,0.2)',
+                        color: project.overdue > 0 ? '#f87171' : project.dueSoon > 0 ? '#fbbf24' : '#7dd3a8',
+                      }}>
+                        {project.overdue > 0 ? '🔴 Crítico' : project.dueSoon > 0 ? '🟠 Atenção' : '🟢 Normal'}
+                      </span>
+                    </div>
                   </div>
-                ))
-              )}
+
+                  {/* Tickets Table */}
+                  {project.tickets.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead style={{ borderBottom: `1px solid ${BORDER}` }}>
+                          <tr style={{ background: 'rgba(0,0,0,0.2)' }}>
+                            {['Status', 'Ticket', 'Título', 'Responsável', 'Prioridade', 'Data Limite'].map(h => (
+                              <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase" style={{ color: MUTED }}>
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {project.tickets.map((t: Ticket, i) => (
+                            <tr key={t.key} style={{ borderTop: i > 0 ? `1px solid ${BORDER}` : 'none' }} className="hover:bg-white/[0.02] transition-colors">
+                              <td className="px-4 py-3 text-sm">
+                                {t.isOverdue ? '🔴' : t.isDueSoon ? '🟠' : t.isCompleted ? '✅' : '🔵'}
+                              </td>
+                              <td className="px-4 py-3 font-mono font-bold" style={{ color: T }}>
+                                <a href={t.url} target="_blank" rel="noopener noreferrer" className="hover:opacity-80">
+                                  {t.key}
+                                </a>
+                              </td>
+                              <td className="px-4 py-3 max-w-xs" style={{ color: '#f3fafa' }}>
+                                {t.summary.substring(0, 50)}
+                              </td>
+                              <td className="px-4 py-3">{t.assignee}</td>
+                              <td className="px-4 py-3">
+                                <span className="text-xs px-2 py-1 rounded" style={{
+                                  background: t.priority === 'High' || t.priority === 'Highest' ? 'rgba(248,113,113,0.2)' : 'rgba(251,191,36,0.2)',
+                                  color: t.priority === 'High' || t.priority === 'Highest' ? '#f87171' : '#fbbf24',
+                                }}>
+                                  {t.priority}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-xs">
+                                {t.dueDate ? new Date(t.dueDate).toLocaleDateString('pt-BR') : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
-        )}
 
-      </div>
-    </>
+          {/* GLPI Service Desk */}
+          {glpi.total > 0 && (
+            <div>
+              <h2 className="text-sm font-bold uppercase mb-4" style={{ ...H, color: MUTED, letterSpacing: '0.12em' }}>
+                GLPI Service Desk
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="rounded-xl p-6" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  <p className="text-xs font-semibold uppercase" style={{ color: MUTED }}>Chamados de Clientes</p>
+                  <p className="text-3xl font-bold mt-3" style={{ color: '#8fbfc2' }}>{glpi.customerTickets || 0}</p>
+                </div>
+                <div className="rounded-xl p-6" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  <p className="text-xs font-semibold uppercase" style={{ color: MUTED }}>Infraestrutura</p>
+                  <p className="text-3xl font-bold mt-3" style={{ color: '#fbbf24' }}>{glpi.infrastructureTickets || 0}</p>
+                </div>
+                <div className="rounded-xl p-6" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  <p className="text-xs font-semibold uppercase" style={{ color: MUTED }}>Banco de Dados</p>
+                  <p className="text-3xl font-bold mt-3" style={{ color: '#fb923c' }}>{glpi.databaseTickets || 0}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Risks & Recommendations */}
+          {(risks.length > 0 || recommendations.length > 0) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {risks.length > 0 && (
+                <div className="rounded-xl p-6" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  <p className="text-sm font-bold uppercase mb-4" style={{ ...H, color: MUTED }}>Riscos Identificados</p>
+                  <div className="space-y-3">
+                    {risks.slice(0, 5).map((r: any, i) => (
+                      <div key={i} className="rounded-lg p-3" style={{ background: 'rgba(0,0,0,0.2)', borderLeft: `3px solid ${r.severity === 'critical' ? '#f87171' : '#fbbf24'}` }}>
+                        <p className="text-sm font-bold" style={{ color: '#f3fafa' }}>{r.title}</p>
+                        <p className="text-xs mt-1" style={{ color: MUTED }}>{r.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {recommendations.length > 0 && (
+                <div className="rounded-xl p-6" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  <p className="text-sm font-bold uppercase mb-4" style={{ ...H, color: MUTED }}>Recomendações</p>
+                  <div className="space-y-2">
+                    {recommendations.map((r: string, i: number) => (
+                      <div key={i} className="flex gap-2">
+                        <span style={{ color: T }}>→</span>
+                        <p className="text-sm" style={{ color: '#f3fafa' }}>{r}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {isLoading && (
+        <div className="rounded-xl p-12 text-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <Loader2 size={32} className="animate-spin mx-auto mb-3" style={{ color: T }} />
+          <p style={{ color: MUTED }}>Carregando relatório...</p>
+        </div>
+      )}
+    </div>
   )
 }

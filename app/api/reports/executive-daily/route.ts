@@ -44,8 +44,99 @@ async function analyzeJira() {
     const open = issues.filter((i: any) => !['Done', 'Closed'].includes(i.status))
     const critical = open.filter((i: any) => ['Highest', 'High'].includes(i.priority))
     const overdue = open.filter((i: any) => i.dueDate && isOverdue(i.dueDate))
+    const dueSoon = open.filter((i: any) => i.dueDate && daysUntilDue(i.dueDate) > 0 && daysUntilDue(i.dueDate) <= 3)
     const unassigned = open.filter((i: any) => !i.assignee)
     const noDueDate = open.filter((i: any) => !i.dueDate)
+
+    // Agrupar por projeto com detalhes completos
+    const projectMap: Record<string, any> = {}
+
+    issues.forEach((i: any) => {
+      const projKey = i.project?.key || 'OTHER'
+      const projName = i.project?.name || 'Outros Projetos'
+
+      if (!projectMap[projKey]) {
+        projectMap[projKey] = {
+          key: projKey,
+          name: projName,
+          total: 0,
+          open: 0,
+          completed: 0,
+          inProgress: 0,
+          critical: 0,
+          overdue: 0,
+          dueSoon: 0,
+          unassigned: 0,
+          tickets: [],
+        }
+      }
+
+      const isCompleted = ['Done', 'Closed'].includes(i.status)
+      const isOpen = !isCompleted
+      const isInProgress = ['Em Andamento', 'In Progress', 'em andamento'].includes(i.status)
+
+      projectMap[projKey].total += 1
+      if (isCompleted) projectMap[projKey].completed += 1
+      if (isOpen) projectMap[projKey].open += 1
+      if (isInProgress) projectMap[projKey].inProgress += 1
+      if (isOpen && ['Highest', 'High'].includes(i.priority)) projectMap[projKey].critical += 1
+      if (isOpen && i.dueDate && isOverdue(i.dueDate)) projectMap[projKey].overdue += 1
+      if (isOpen && i.dueDate && daysUntilDue(i.dueDate) > 0 && daysUntilDue(i.dueDate) <= 3) projectMap[projKey].dueSoon += 1
+      if (isOpen && !i.assignee) projectMap[projKey].unassigned += 1
+
+      projectMap[projKey].tickets.push({
+        key: i.key,
+        summary: i.summary,
+        status: i.status,
+        priority: i.priority,
+        assignee: i.assignee?.displayName || 'Não atribuído',
+        dueDate: i.dueDate || null,
+        url: i.url,
+        isCompleted,
+        isOverdue: isOpen && i.dueDate ? isOverdue(i.dueDate) : false,
+        isDueSoon: isOpen && i.dueDate ? (daysUntilDue(i.dueDate) > 0 && daysUntilDue(i.dueDate) <= 3) : false,
+        daysUntilDue: i.dueDate ? daysUntilDue(i.dueDate) : null,
+      })
+    })
+
+    // Ordenar tickets em cada projeto
+    Object.keys(projectMap).forEach(projKey => {
+      const tickets = projectMap[projKey].tickets
+      tickets.sort((a: any, b: any) => {
+        // Atrasados primeiro
+        if (a.isOverdue && !b.isOverdue) return -1
+        if (!a.isOverdue && b.isOverdue) return 1
+        // Vencendo em breve
+        if (a.isDueSoon && !b.isDueSoon) return -1
+        if (!a.isDueSoon && b.isDueSoon) return 1
+        // Em andamento
+        if (a.status === 'Em Andamento' && b.status !== 'Em Andamento') return -1
+        // Não iniciados
+        if (a.status === 'Não Iniciado' && b.status !== 'Não Iniciado') return 1
+        // Concluídos por último
+        if (a.isCompleted && !b.isCompleted) return 1
+        if (!a.isCompleted && b.isCompleted) return -1
+        return 0
+      })
+    })
+
+    // Itens críticos (para seção especial)
+    const criticalItems = []
+    Object.values(projectMap).forEach((proj: any) => {
+      proj.tickets.forEach((t: any) => {
+        if (t.isOverdue || (t.priority && ['Highest', 'High'].includes(t.priority)) ||
+            !t.assignee || (t.isDueSoon)) {
+          criticalItems.push({
+            key: t.key,
+            summary: t.summary,
+            project: proj.name,
+            priority: t.priority,
+            assignee: t.assignee,
+            issue: t.isOverdue ? '🔴 Atrasado' : t.isDueSoon ? '🟠 Vence em breve' : t.priority && ['Highest', 'High'].includes(t.priority) ? '⚠️ Crítico' : '👤 Sem responsável',
+          })
+        }
+      })
+    })
 
     return {
       total: issues.length,
@@ -54,20 +145,22 @@ async function analyzeJira() {
       completedToday: completed.length,
       critical: critical.length,
       overdue: overdue.length,
+      dueSoon: dueSoon.length,
       unassigned: unassigned.length,
       noDueDate: noDueDate.length,
-      byProject: groupBy(open, 'projectKey'),
+      projectsData: projectMap,
+      criticalItems: criticalItems.slice(0, 15),
       completedDetails: completed.slice(0, 5).map((i: any) => ({
         key: i.key,
         summary: i.summary,
-        assignee: i.assignee?.displayName || 'Unassigned',
+        assignee: i.assignee?.displayName || 'Não atribuído',
         project: i.project?.name || i.projectKey,
         updated: i.updated,
       })),
       overdueDetails: overdue.slice(0, 10).map((i: any) => ({
         key: i.key,
         summary: i.summary,
-        assignee: i.assignee?.displayName || 'Unassigned',
+        assignee: i.assignee?.displayName || 'Não atribuído',
         dueDate: i.dueDate,
         daysOverdue: -daysUntilDue(i.dueDate),
         priority: i.priority,
@@ -76,7 +169,7 @@ async function analyzeJira() {
       criticalDetails: critical.slice(0, 10).map((i: any) => ({
         key: i.key,
         summary: i.summary,
-        assignee: i.assignee?.displayName || 'Unassigned',
+        assignee: i.assignee?.displayName || 'Não atribuído',
         dueDate: i.dueDate,
         daysUntilDue: daysUntilDue(i.dueDate),
         priority: i.priority,
