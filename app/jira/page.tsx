@@ -1,9 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { ExternalLink, Loader2, Search, RefreshCw, AlertCircle, Download } from 'lucide-react'
-import { Input } from '@/components/ui/input'
-import { exportJira } from '@/lib/export-excel'
+import { ExternalLink, Loader2, RefreshCw, AlertCircle, TrendingUp, Clock, AlertTriangle, CheckCircle2 } from 'lucide-react'
 
 interface JiraIssue {
   key: string
@@ -15,283 +13,299 @@ interface JiraIssue {
   assignee: string | null
   project: { key: string; name: string }
   updated: string
+  created: string | null
   url: string
 }
 
-const PROJECTS = [
-  { key: 'todos', name: 'Todos' },
-  { key: 'HV', name: 'Neural Lens' },
-  { key: 'MSPINFRA', name: 'MSP-Infra' },
-  { key: 'MSPPRO', name: 'MSP-Projetos' },
-  { key: 'IDB', name: 'Infra & DB' },
-  { key: 'NMA', name: 'NL Marisa' },
+interface ProjectMetrics {
+  name: string
+  key: string
+  total: number
+  backlog: number
+  progress: number
+  done: number
+  critical: number
+  overdue: number
+  nextWeek: number
+  completionRate: number
+  issues: JiraIssue[]
+}
+
+const STRATEGIC_PROJECTS = [
+  { key: 'HV', name: 'Neural Lens', color: '#8fbfc2' },
+  { key: 'MSPINFRA', name: 'MSP Infra', color: '#7dd3a8' },
+  { key: 'MSPPRO', name: 'MSP Projetos', color: '#fbbf24' },
 ]
 
-const STATUSES = [
-  { key: 'todos', label: 'Todos' },
-  { key: 'Backlog', label: 'Backlog' },
-  { key: 'On going', label: 'On Going' },
-  { key: 'Em andamento', label: 'Em Andamento' },
-  { key: 'CODE REVIEW', label: 'Code Review' },
-  { key: 'Waiting', label: 'Waiting' },
-  { key: 'Concluído', label: 'Concluído' },
-  { key: 'Close', label: 'Close' },
-]
-
-function statusStyle(status: string, cat: string) {
-  const s = status.toLowerCase()
-  if (s === 'backlog') return { bg: 'oklch(0.35 0.02 250 / 50%)', color: 'oklch(0.65 0.02 230)', border: 'oklch(0.65 0.02 230 / 20%)' }
-  if (s.includes('andamento') || s === 'on going') return { bg: 'oklch(0.8 0.13 186 / 12%)', color: 'oklch(0.8 0.13 186)', border: 'oklch(0.8 0.13 186 / 25%)' }
-  if (s === 'code review') return { bg: 'oklch(0.7 0.18 280 / 12%)', color: 'oklch(0.7 0.18 280)', border: 'oklch(0.7 0.18 280 / 25%)' }
-  if (s === 'waiting') return { bg: 'oklch(0.8 0.18 75 / 12%)', color: 'oklch(0.8 0.18 75)', border: 'oklch(0.8 0.18 75 / 25%)' }
-  if (s === 'concluído' || s === 'close' || cat === 'done') return { bg: 'oklch(0.75 0.15 160 / 12%)', color: 'oklch(0.75 0.15 160)', border: 'oklch(0.75 0.15 160 / 25%)' }
-  return { bg: 'oklch(0.35 0.02 250 / 50%)', color: 'oklch(0.65 0.02 230)', border: 'oklch(0.65 0.02 230 / 20%)' }
-}
-
-function priorityColor(p: string) {
-  if (p === 'High' || p === 'Highest') return 'oklch(0.65 0.22 27)'
-  if (p === 'Medium') return 'oklch(0.8 0.18 75)'
-  return 'oklch(0.56 0.02 230)'
-}
-
-function projectColor(key: string) {
-  const map: Record<string, string> = {
-    HV: 'oklch(0.8 0.13 186)',
-    MSPINFRA: 'oklch(0.7 0.18 280)',
-    MSPPRO: 'oklch(0.75 0.15 160)',
-    IDB: 'oklch(0.75 0.18 55)',
-    NMA: 'oklch(0.7 0.2 340)',
-  }
-  return map[key] ?? 'oklch(0.56 0.02 230)'
-}
-
-function timeAgo(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime()
-  const d = Math.floor(diff / 86400000)
-  if (d === 0) return 'hoje'
-  if (d === 1) return 'ontem'
-  if (d < 7) return `${d}d atrás`
-  if (d < 30) return `${Math.floor(d / 7)}sem atrás`
-  return `${Math.floor(d / 30)}m atrás`
-}
+const H = { fontFamily: 'var(--font-heading), "Space Grotesk", sans-serif' }
+const CARD = '#0d1a1e'
+const BORDER = 'rgba(143,191,194,0.10)'
+const MUTED = 'rgba(243,250,250,0.45)'
 
 export default function JiraPage() {
-  const [issues, setIssues] = useState<JiraIssue[]>([])
-  const [total, setTotal] = useState(0)
+  const [metrics, setMetrics] = useState<ProjectMetrics[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [project, setProject] = useState('todos')
-  const [status, setStatus] = useState('todos')
-  const [search, setSearch] = useState('')
-  const [searchInput, setSearchInput] = useState('')
 
-  const load = useCallback(async () => {
+  const loadProjectsData = useCallback(async () => {
     setLoading(true)
     setError(null)
+
     try {
-      const params = new URLSearchParams({ project, status })
-      if (search) params.set('search', search)
-      const res = await fetch(`/api/jira?${params}`)
-      const data = await res.json()
-      if (data.error) throw new Error(data.error)
-      setIssues(data.issues ?? [])
-      setTotal(data.total ?? 0)
+      // Fetch issues for all strategic projects
+      const projectsData: ProjectMetrics[] = []
+
+      for (const proj of STRATEGIC_PROJECTS) {
+        try {
+          const res = await fetch(`/api/jira?project=${proj.key}`)
+          const data = await res.json()
+
+          if (data.error) {
+            throw new Error(data.error)
+          }
+
+          const issues: JiraIssue[] = data.issues || []
+          const now = new Date()
+          const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+
+          const metrics: ProjectMetrics = {
+            name: proj.name,
+            key: proj.key,
+            total: issues.length,
+            backlog: issues.filter(i => i.status.toLowerCase() === 'backlog').length,
+            progress: issues.filter(i => ['em andamento', 'on going', 'code review'].includes(i.status.toLowerCase())).length,
+            done: issues.filter(i => ['concluído', 'close'].includes(i.status.toLowerCase())).length,
+            critical: issues.filter(i => ['highest', 'high'].includes(i.priority?.toLowerCase() ?? '')).length,
+            overdue: issues.filter(i => {
+              if (i.created && ['em andamento', 'on going'].includes(i.status.toLowerCase())) {
+                const createdDate = new Date(i.created)
+                return (now.getTime() - createdDate.getTime()) > 7 * 24 * 60 * 60 * 1000
+              }
+              return false
+            }).length,
+            nextWeek: issues.filter(i => {
+              if (i.updated) {
+                const updatedDate = new Date(i.updated)
+                return updatedDate >= now && updatedDate <= weekFromNow
+              }
+              return false
+            }).length,
+            completionRate: issues.length > 0 ? Math.round((issues.filter(i => ['concluído', 'close'].includes(i.status.toLowerCase())).length / issues.length) * 100) : 0,
+            issues: issues.slice(0, 5), // Top 5 recent issues
+          }
+
+          projectsData.push(metrics)
+        } catch (e) {
+          console.error(`Erro ao carregar projeto ${proj.name}:`, e)
+        }
+      }
+
+      setMetrics(projectsData)
     } catch (e: any) {
-      setError(e.message)
+      setError(e.message || 'Não foi possível sincronizar os dados do Jira. Tente novamente em alguns instantes.')
+      console.error('Erro ao carregar Jira:', e)
     } finally {
       setLoading(false)
     }
-  }, [project, status, search])
+  }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    loadProjectsData()
+  }, [loadProjectsData])
 
-  function handleSearch(e: React.FormEvent) {
-    e.preventDefault()
-    setSearch(searchInput)
+  const formatDate = (iso: string) => {
+    const d = new Date(iso)
+    return d.toLocaleDateString('pt-BR', { month: 'short', day: 'numeric' })
   }
-
-  const counts = {
-    backlog: issues.filter(i => i.status.toLowerCase() === 'backlog').length,
-    progress: issues.filter(i => ['on going', 'em andamento', 'code review'].includes(i.status.toLowerCase())).length,
-    done: issues.filter(i => ['concluído', 'close'].includes(i.status.toLowerCase())).length,
-  }
-
-  const filterBtn = (active: boolean) => ({
-    ...(active
-      ? { background: 'oklch(0.8 0.13 186 / 15%)', color: 'oklch(0.8 0.13 186)', border: '1px solid oklch(0.8 0.13 186 / 30%)' }
-      : { background: 'oklch(0.15 0.02 250)', color: 'oklch(0.56 0.02 230)', border: '1px solid oklch(1 0 0 / 8%)' }),
-  })
 
   return (
-    <div className="p-8">
+    <div className="p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-start justify-between">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <h2 className="text-2xl font-bold text-white">Jira</h2>
-            <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-              style={{ background: 'oklch(0.8 0.13 186 / 12%)', color: 'oklch(0.8 0.13 186)', border: '1px solid oklch(0.8 0.13 186 / 25%)' }}>
-              productxtentgroup.atlassian.net
-            </span>
-          </div>
-          <p className="text-sm" style={{ color: 'rgba(243,250,250,0.45)' }}>
-            Controle de atividades · {loading ? 'carregando...' : `${total} issues`}
+          <h1 className="text-4xl font-bold" style={{ ...H, color: '#f3fafa' }}>
+            Jira — Projetos Estratégicos
+          </h1>
+          <p className="text-sm mt-2" style={{ color: MUTED }}>
+            {loading ? 'Carregando...' : `${metrics.length} projetos, ${metrics.reduce((a, m) => a + m.total, 0)} demandas totais`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => issues.length > 0 && exportJira(issues)}
-            disabled={issues.length === 0}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
-            style={{ background: 'rgba(143,191,194,0.10)', color: '#8fbfc2', border: '1px solid rgba(143,191,194,0.20)' }}>
-            <Download size={14} /> Exportar Excel
-          </button>
-          <button onClick={load} disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all"
-            style={{ background: '#0d1a1e', color: 'rgba(243,250,250,0.45)', border: '1px solid rgba(143,191,194,0.10)' }}>
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            Atualizar
-          </button>
-        </div>
+        <button
+          onClick={loadProjectsData}
+          disabled={loading}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-all"
+          style={{
+            background: '#8fbfc2',
+            color: '#0a1316',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            opacity: loading ? 0.7 : 1,
+          }}
+        >
+          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+          {loading ? 'Atualizando...' : 'Atualizar'}
+        </button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        {[
-          { label: 'Backlog', count: counts.backlog, color: 'oklch(0.65 0.02 230)' },
-          { label: 'Em Progresso', count: counts.progress, color: 'oklch(0.8 0.13 186)' },
-          { label: 'Concluído', count: counts.done, color: 'oklch(0.75 0.15 160)' },
-        ].map(({ label, count, color }) => (
-          <div key={label} className="rounded-xl p-4"
-            style={{ background: 'oklch(0.15 0.02 250)', border: '1px solid oklch(1 0 0 / 8%)' }}>
-            <p className="text-2xl font-bold" style={{ color }}>{count}</p>
-            <p className="text-xs mt-0.5" style={{ color: 'oklch(0.56 0.02 230)' }}>{label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Project filter */}
-      <div className="flex flex-wrap gap-2 mb-3">
-        {PROJECTS.map(p => (
-          <button key={p.key} onClick={() => setProject(p.key)}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all"
-            style={filterBtn(project === p.key)}>
-            {p.name}
-          </button>
-        ))}
-      </div>
-
-      {/* Status filter + search */}
-      <div className="flex flex-wrap gap-2 mb-5 items-center">
-        <form onSubmit={handleSearch} className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'oklch(0.45 0.02 230)' }} />
-          <Input
-            className="pl-8 w-52 h-8 text-sm"
-            placeholder="Buscar issue..."
-            value={searchInput}
-            onChange={e => setSearchInput(e.target.value)}
-          />
-        </form>
-        <div className="w-px h-5 mx-1" style={{ background: 'oklch(1 0 0 / 8%)' }} />
-        {STATUSES.map(s => (
-          <button key={s.key} onClick={() => setStatus(s.key)}
-            className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-            style={filterBtn(status === s.key)}>
-            {s.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Error */}
+      {/* Error Alert */}
       {error && (
-        <div className="rounded-xl p-4 mb-4 flex items-center gap-3"
-          style={{ background: 'oklch(0.65 0.22 27 / 10%)', border: '1px solid oklch(0.65 0.22 27 / 25%)' }}>
-          <AlertCircle size={16} style={{ color: 'oklch(0.65 0.22 27)' }} />
+        <div className="rounded-xl p-4 flex items-start gap-3" style={{ background: CARD, border: `1px solid rgba(248,113,113,0.25)` }}>
+          <AlertCircle size={18} style={{ color: '#f87171', flexShrink: 0 }} className="mt-0.5" />
           <div>
-            <p className="text-sm font-medium" style={{ color: 'oklch(0.65 0.22 27)' }}>Erro ao conectar ao Jira</p>
-            <p className="text-xs mt-0.5" style={{ color: 'oklch(0.56 0.02 230)' }}>
-              Configure <code className="px-1 py-0.5 rounded" style={{ background: 'oklch(1 0 0 / 8%)' }}>JIRA_EMAIL</code> e{' '}
-              <code className="px-1 py-0.5 rounded" style={{ background: 'oklch(1 0 0 / 8%)' }}>JIRA_API_TOKEN</code> no .env.local
+            <p className="font-medium" style={{ color: '#f87171' }}>Erro ao sincronizar dados</p>
+            <p className="text-sm mt-1" style={{ color: MUTED }}>
+              Não foi possível sincronizar os dados do Jira. Tente novamente em alguns instantes.
             </p>
           </div>
         </div>
       )}
 
-      {/* Issues table */}
-      <div className="rounded-xl overflow-hidden" style={{ background: 'oklch(0.15 0.02 250)', border: '1px solid oklch(1 0 0 / 8%)' }}>
-        {loading ? (
-          <div className="flex justify-center py-16">
-            <Loader2 size={24} className="animate-spin" style={{ color: 'oklch(0.8 0.13 186)' }} />
-          </div>
-        ) : issues.length === 0 && !error ? (
-          <div className="p-10 text-center text-sm" style={{ color: 'oklch(0.45 0.02 230)' }}>
-            Nenhuma issue encontrada.
-          </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead style={{ borderBottom: '1px solid oklch(1 0 0 / 8%)' }}>
-              <tr>
-                {['Chave', 'Resumo', 'Projeto', 'Tipo', 'Status', 'Responsável', 'Atualizado', ''].map(h => (
-                  <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider whitespace-nowrap"
-                    style={{ color: 'oklch(0.45 0.02 230)' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {issues.map((issue, i) => {
-                const st = statusStyle(issue.status, issue.statusCategory)
-                return (
-                  <tr key={issue.key} style={{ borderTop: i > 0 ? '1px solid oklch(1 0 0 / 5%)' : 'none' }}
-                    className="transition-colors hover:bg-white/[0.02]">
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="text-xs font-mono font-semibold" style={{ color: projectColor(issue.project.key) }}>
-                        {issue.key}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 max-w-xs">
-                      <span className="text-white font-medium line-clamp-2 text-xs leading-relaxed">
-                        {issue.summary}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="text-xs px-2 py-0.5 rounded-full"
-                        style={{ background: `${projectColor(issue.project.key)}15`, color: projectColor(issue.project.key), border: `1px solid ${projectColor(issue.project.key)}25` }}>
-                        {issue.project.key}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="text-xs" style={{ color: 'oklch(0.56 0.02 230)' }}>{issue.type}</span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                        style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
-                        {issue.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {issue.assignee ? (
-                        <span className="text-xs" style={{ color: 'oklch(0.56 0.02 230)' }}>
-                          {issue.assignee.split(' ')[0]}
-                        </span>
-                      ) : (
-                        <span className="text-xs" style={{ color: 'oklch(0.35 0.02 230)' }}>—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="text-xs" style={{ color: 'oklch(0.45 0.02 230)' }}>{timeAgo(issue.updated)}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <a href={issue.url} target="_blank" rel="noopener noreferrer"
-                        className="opacity-40 hover:opacity-100 transition-opacity inline-flex">
-                        <ExternalLink size={13} style={{ color: 'oklch(0.8 0.13 186)' }} />
-                      </a>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+      {/* Loading State */}
+      {loading && !error && (
+        <div className="rounded-xl p-12 text-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <Loader2 size={32} className="animate-spin mx-auto mb-3" style={{ color: '#8fbfc2' }} />
+          <p style={{ color: MUTED }}>Carregando dados dos projetos...</p>
+        </div>
+      )}
+
+      {/* Projects Grid */}
+      {!loading && metrics.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {metrics.map((project) => {
+            const projectColor = STRATEGIC_PROJECTS.find(p => p.key === project.key)?.color || '#8fbfc2'
+
+            return (
+              <div
+                key={project.key}
+                className="rounded-xl overflow-hidden"
+                style={{ background: CARD, border: `1px solid ${BORDER}` }}
+              >
+                {/* Project Header */}
+                <div className="p-6 border-b" style={{ borderColor: BORDER }}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xl font-bold" style={{ ...H, color: '#f3fafa' }}>
+                      {project.name}
+                    </h2>
+                    <div
+                      className="px-3 py-1 rounded-full text-sm font-semibold"
+                      style={{
+                        color: projectColor,
+                        background: `${projectColor}20`,
+                        border: `1px solid ${projectColor}40`,
+                      }}
+                    >
+                      {project.total}
+                    </div>
+                  </div>
+
+                  {/* Quick Metrics */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg p-3" style={{ background: 'rgba(0,0,0,0.3)' }}>
+                      <p className="text-xs" style={{ color: MUTED }}>Em Progresso</p>
+                      <p className="text-2xl font-bold mt-1" style={{ color: '#8fbfc2' }}>
+                        {project.progress}
+                      </p>
+                    </div>
+                    <div className="rounded-lg p-3" style={{ background: 'rgba(0,0,0,0.3)' }}>
+                      <p className="text-xs" style={{ color: MUTED }}>Concluído</p>
+                      <p className="text-2xl font-bold mt-1" style={{ color: '#7dd3a8' }}>
+                        {project.done}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* KPIs */}
+                <div className="p-6 border-b" style={{ borderColor: BORDER }}>
+                  <div className="space-y-3">
+                    {/* Atrasadas */}
+                    {project.overdue > 0 && (
+                      <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)' }}>
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle size={14} style={{ color: '#f87171' }} />
+                          <span className="text-xs font-medium" style={{ color: MUTED }}>Demandas Atrasadas</span>
+                        </div>
+                        <span className="font-bold" style={{ color: '#f87171' }}>{project.overdue}</span>
+                      </div>
+                    )}
+
+                    {/* Críticas */}
+                    {project.critical > 0 && (
+                      <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)' }}>
+                        <div className="flex items-center gap-2">
+                          <TrendingUp size={14} style={{ color: '#fbbf24' }} />
+                          <span className="text-xs font-medium" style={{ color: MUTED }}>Demandas Críticas</span>
+                        </div>
+                        <span className="font-bold" style={{ color: '#fbbf24' }}>{project.critical}</span>
+                      </div>
+                    )}
+
+                    {/* Próxima semana */}
+                    {project.nextWeek > 0 && (
+                      <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: 'rgba(143,191,194,0.08)', border: '1px solid rgba(143,191,194,0.2)' }}>
+                        <div className="flex items-center gap-2">
+                          <Clock size={14} style={{ color: '#8fbfc2' }} />
+                          <span className="text-xs font-medium" style={{ color: MUTED }}>Próx. 7 dias</span>
+                        </div>
+                        <span className="font-bold" style={{ color: '#8fbfc2' }}>{project.nextWeek}</span>
+                      </div>
+                    )}
+
+                    {/* Taxa de Conclusão */}
+                    <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)' }}>
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 size={14} style={{ color: '#7dd3a8' }} />
+                        <span className="text-xs font-medium" style={{ color: MUTED }}>Taxa de Conclusão</span>
+                      </div>
+                      <span className="font-bold" style={{ color: '#7dd3a8' }}>{project.completionRate}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recent Issues */}
+                {project.issues.length > 0 && (
+                  <div className="p-6">
+                    <p className="text-xs font-semibold uppercase mb-3" style={{ color: MUTED }}>
+                      Atividades Recentes
+                    </p>
+                    <div className="space-y-2">
+                      {project.issues.map((issue) => (
+                        <a
+                          key={issue.key}
+                          href={issue.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-start gap-2 p-2 rounded-lg hover:bg-white/5 transition-colors group"
+                        >
+                          <span className="text-xs font-mono font-semibold mt-0.5" style={{ color: projectColor }}>
+                            {issue.key}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs truncate group-hover:underline" style={{ color: '#f3fafa' }}>
+                              {issue.summary}
+                            </p>
+                            <p className="text-[10px] mt-1" style={{ color: MUTED }}>
+                              {issue.status}
+                            </p>
+                          </div>
+                          <ExternalLink size={12} style={{ color: MUTED, flexShrink: 0 }} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!loading && metrics.length === 0 && !error && (
+        <div className="rounded-xl p-12 text-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <AlertCircle size={32} className="mx-auto mb-3" style={{ color: MUTED }} />
+          <p style={{ color: MUTED }}>Nenhum projeto encontrado</p>
+        </div>
+      )}
     </div>
   )
 }
