@@ -29,7 +29,6 @@ const sections = [
       { href: '/jira',      label: 'Jira',         icon: Layers },
       { href: '/glpi',      label: 'GLPI',         icon: Headphones },
       { href: '/relatorios', label: 'Relatórios',   icon: BarChart2 },
-      { href: '/notifications', label: 'Executive Board', icon: Bell },
     ],
   },
   {
