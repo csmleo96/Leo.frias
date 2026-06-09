@@ -74,15 +74,19 @@ export async function GET(request: NextRequest) {
       'sort': '15',
       'order': 'DESC',
       'is_deleted': '0',
-      'forcedisplay[0]': '2',   // id
-      'forcedisplay[1]': '1',   // name/title
-      'forcedisplay[2]': '12',  // status
-      'forcedisplay[3]': '3',   // priority
-      'forcedisplay[4]': '14',  // type
-      'forcedisplay[5]': '15',  // date_mod
-      'forcedisplay[6]': '5',   // users_id_recipient
-      'forcedisplay[7]': '4',   // _users_id_assign
-      'forcedisplay[8]': '19',  // date (creation)
+      'forcedisplay[0]': '2',    // id
+      'forcedisplay[1]': '1',    // name/title
+      'forcedisplay[2]': '12',   // status
+      'forcedisplay[3]': '3',    // priority
+      'forcedisplay[4]': '14',   // type
+      'forcedisplay[5]': '15',   // date_mod
+      'forcedisplay[6]': '5',    // users_id_recipient
+      'forcedisplay[7]': '4',    // _users_id_assign
+      'forcedisplay[8]': '19',   // date (creation)
+      'forcedisplay[9]': '7',    // itilcategories_id (categoria)
+      'forcedisplay[10]': '80',  // groups_id (grupo responsável)
+      'forcedisplay[11]': '50',  // requesttypes_id (tipo de requisição)
+      'forcedisplay[12]': '71',  // entities_id (entidade/departamento)
     })
 
     if (statusFilter !== 'all') {
@@ -116,19 +120,63 @@ export async function GET(request: NextRequest) {
     const raw = JSON.parse(text)
     const items: any[] = raw.data ?? []
 
-    const tickets = items.map((t: any) => ({
-      id: t[2] ?? '?',
-      title: t[1] ?? '(sem título)',
-      status: Number(t[12]) || 1,
-      statusLabel: STATUS_LABEL[Number(t[12])] ?? 'Desconhecido',
-      priority: Number(t[3]) || 3,
-      priorityLabel: PRIORITY_LABEL[Number(t[3])] ?? 'Média',
-      type: Number(t[14]) || 1,
-      typeLabel: TYPE_LABEL[Number(t[14])] ?? 'Incidente',
-      dateMod: t[15] ?? null,
-      dateCreation: t[19] ?? null,
-      assignee: t[5] ? String(t[5]) : null,
-    }))
+    const tickets = items.map((t: any) => {
+      // Classificar baseado em categoria, grupo e tipo de requisição
+      const categoryId = Number(t[7]) || 0
+      const groupId = Number(t[80]) || 0
+      const requestTypeId = Number(t[50]) || 0
+      const entityId = Number(t[71]) || 0
+
+      // Determinar tipo de origem
+      let origin = 'CLIENTE' // padrão
+      let category = 'Solicitação'
+
+      // Grupos de infraestrutura conhecidos (ajuste conforme seu GLPI)
+      const infraGroups = [2, 3, 4, 5, 15, 16, 17] // IDs dos grupos de infra
+      const dbGroups = [6, 7, 8] // IDs dos grupos de BD
+
+      // Se o grupo está em infragrupos, é automático
+      if (infraGroups.includes(groupId)) {
+        origin = 'INFRAESTRUTURA'
+        category = 'Infraestrutura'
+      } else if (dbGroups.includes(groupId)) {
+        origin = 'BANCO_DE_DADOS'
+        category = 'Banco de Dados'
+      }
+
+      // Se o título contém palavras-chave de automático, marca como tal
+      const title = String(t[1] ?? '').toLowerCase()
+      if (title.includes('alerta') || title.includes('monitoring') || title.includes('zabbix') ||
+          title.includes('banco') || title.includes('database') || title.includes('sql') ||
+          title.includes('servidor') || title.includes('server') || title.includes('cpu') ||
+          title.includes('memoria') || title.includes('memory') || title.includes('disco')) {
+        origin = 'INFRAESTRUTURA'
+        category = 'Infraestrutura'
+        if (title.includes('banco') || title.includes('database') || title.includes('sql')) {
+          origin = 'BANCO_DE_DADOS'
+          category = 'Banco de Dados'
+        }
+      }
+
+      return {
+        id: t[2] ?? '?',
+        title: t[1] ?? '(sem título)',
+        status: Number(t[12]) || 1,
+        statusLabel: STATUS_LABEL[Number(t[12])] ?? 'Desconhecido',
+        priority: Number(t[3]) || 3,
+        priorityLabel: PRIORITY_LABEL[Number(t[3])] ?? 'Média',
+        type: Number(t[14]) || 1,
+        typeLabel: TYPE_LABEL[Number(t[14])] ?? 'Incidente',
+        dateMod: t[15] ?? null,
+        dateCreation: t[19] ?? null,
+        assignee: t[5] ? String(t[5]) : null,
+        origin, // CLIENTE | INFRAESTRUTURA | BANCO_DE_DADOS | MONITORAMENTO
+        category, // Categoria de origem
+        categoryId,
+        groupId,
+        isAutomated: origin !== 'CLIENTE', // true se for automático
+      }
+    })
 
     const stats = {
       total: raw.totalcount ?? items.length,

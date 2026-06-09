@@ -19,9 +19,13 @@ interface Ticket {
   type: number
   typeLabel: string
   dateMod: string | null
+  dateCreation: string | null
   assignee: string | null
-  category?: string
-  isMonitored?: boolean
+  origin: 'CLIENTE' | 'INFRAESTRUTURA' | 'BANCO_DE_DADOS' | 'MONITORAMENTO'
+  category: string
+  categoryId: number
+  groupId: number
+  isAutomated: boolean
   daysOpen?: number
 }
 
@@ -67,32 +71,45 @@ export default function GlpiPage() {
       const tickets: Ticket[] = data.tickets ?? []
       const stats: Stats = data.stats ?? {}
 
-      // Processar tickets para categorias
+      // Processar tickets com cálculo de dias abertos
       const categorizedTickets = tickets.map(t => ({
         ...t,
-        isMonitored: t.type >= 5, // Assumindo tipos >= 5 são automáticos
         daysOpen: t.dateMod ? Math.floor((Date.now() - new Date(t.dateMod).getTime()) / 86400000) : 0,
       }))
 
-      // Calcular métricas executivas
+      // Calcular métricas executivas - CORRIGIDO para contar TODOS os tickets
       const criticalCount = categorizedTickets.filter(t => t.priority >= 5).length
       const overdueCount = categorizedTickets.filter(t => t.daysOpen > 7 && ![5, 6].includes(t.status)).length
       const last24h = categorizedTickets.filter(t => {
         if (!t.dateMod) return false
         return Date.now() - new Date(t.dateMod).getTime() < 86400000
       }).length
+      const last24hAutomated = categorizedTickets.filter(t =>
+        t.isAutomated && t.dateMod && Date.now() - new Date(t.dateMod).getTime() < 86400000
+      ).length
+
+      // Reprocessar com categorizedTickets
+      const categorizedWithDays = tickets.map(t => ({
+        ...t,
+        daysOpen: t.dateMod ? Math.floor((Date.now() - new Date(t.dateMod).getTime()) / 86400000) : 0,
+      }))
+
+      const customerTicketsForMetrics = categorizedWithDays.filter(t => t.origin === 'CLIENTE')
+      const infraTicketsForMetrics = categorizedWithDays.filter(t => t.origin === 'INFRAESTRUTURA')
+      const dbTicketsForMetrics = categorizedWithDays.filter(t => t.origin === 'BANCO_DE_DADOS')
+      const allOperationalForMetrics = categorizedWithDays.filter(t => t.isAutomated)
 
       const execMetrics: ExecutiveMetrics = {
         totalTickets: stats.total || 0,
-        totalIncidents: categorizedTickets.filter(t => t.isMonitored).length || 0,
-        criticalIncidents: criticalCount,
+        totalIncidents: allOperationalForMetrics.length || 0, // CORRIGIDO: apenas incidentes automáticos
+        criticalIncidents: categorizedWithDays.filter(t => t.priority >= 5 && t.isAutomated).length,
         slaCompliance: Math.round((1 - overdueCount / (stats.total || 1)) * 100),
         slaAtRisk: overdueCount,
         environmentAvailability: 99.2,
         avgResponseTime: 2.3,
         avgResolutionTime: 12.5,
         last24h,
-        last24hAutomated: categorizedTickets.filter(t => t.isMonitored && Date.now() - new Date(t.dateMod || '').getTime() < 86400000).length,
+        last24hAutomated,
       }
 
       setTickets(categorizedTickets)
@@ -111,8 +128,11 @@ export default function GlpiPage() {
   }, [load])
 
   // Agrupar tickets por status
-  const customerTickets = tickets.filter(t => !t.isMonitored && ![5, 6].includes(t.status))
-  const infrastructureTickets = tickets.filter(t => t.isMonitored || (t.type >= 5 && ![5, 6].includes(t.status)))
+  // Separar tickets corretamente por ORIGEM
+  const customerTickets = tickets.filter(t => t.origin === 'CLIENTE')
+  const infrastructureTickets = tickets.filter(t => t.origin === 'INFRAESTRUTURA')
+  const databaseTickets = tickets.filter(t => t.origin === 'BANCO_DE_DADOS')
+  const allOperationalTickets = tickets.filter(t => t.isAutomated)
 
   // Top clientes
   const topCustomers = tickets.reduce((acc: Record<string, number>, t) => {
@@ -308,7 +328,52 @@ export default function GlpiPage() {
             </div>
           </div>
 
-          {/* Seção 4: Indicadores Operacionais */}
+          {/* Seção 4: Banco de Dados */}
+          <div>
+            <h2 className="text-sm font-bold uppercase mb-4" style={{ ...H, color: MUTED, letterSpacing: '0.12em' }}>
+              Banco de Dados
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: 'Abertos', count: databaseTickets.filter(t => ![5, 6].includes(t.status)).length, color: '#fbbf24' },
+                { label: 'Críticos', count: databaseTickets.filter(t => t.priority >= 5 && ![5, 6].includes(t.status)).length, color: '#f87171' },
+                { label: 'Em Tratamento', count: databaseTickets.filter(t => [2, 3].includes(t.status)).length, color: T },
+                { label: 'Resolvidos (24h)', count: databaseTickets.filter(t => [5, 6].includes(t.status) && t.dateMod && Date.now() - new Date(t.dateMod).getTime() < 86400000).length, color: '#7dd3a8' },
+              ].map(({ label, count, color }) => (
+                <div key={label} className="rounded-xl p-6" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  <p className="text-xs font-semibold uppercase" style={{ color: MUTED, letterSpacing: '0.08em' }}>
+                    {label}
+                  </p>
+                  <p className="text-3xl font-bold mt-3" style={{ color }}>{count}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Sub-categorias BD */}
+            <div className="rounded-xl p-6 mt-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <p className="text-xs font-semibold uppercase mb-4" style={{ color: MUTED, letterSpacing: '0.08em' }}>
+                Incidentes por Banco
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { name: 'SQL Server', icon: '🗄️' },
+                  { name: 'PostgreSQL', icon: '🐘' },
+                  { name: 'MySQL', icon: '🐬' },
+                  { name: 'Oracle', icon: '⭐' },
+                ].map(({ name, icon }) => (
+                  <div key={name} className="rounded-lg p-4" style={{ background: 'rgba(0,0,0,0.3)', border: `1px solid ${BORDER}` }}>
+                    <p className="text-lg mb-2">{icon}</p>
+                    <p className="text-xs" style={{ color: MUTED }}>{name}</p>
+                    <p className="text-lg font-bold mt-1" style={{ color: '#fbbf24' }}>
+                      {databaseTickets.filter(t => t.category.includes(name.split(' ')[0])).length}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Seção 5: Indicadores Operacionais */}
           <div>
             <h2 className="text-sm font-bold uppercase mb-4" style={{ ...H, color: MUTED, letterSpacing: '0.12em' }}>
               Indicadores Operacionais
