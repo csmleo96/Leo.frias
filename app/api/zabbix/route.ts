@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
-import https from 'node:https'
 
 export const dynamic = 'force-dynamic'
 
 const API_URL = process.env.ZABBIX_API_URL
-const TOKEN   = process.env.ZABBIX_TOKEN
+const ZBX_USER = process.env.ZABBIX_USER
+const ZBX_PASS = process.env.ZABBIX_PASS
 
 const SEV_LABEL: Record<number, string> = {
   0: 'Não Classificado', 1: 'Informação', 2: 'Aviso',
@@ -15,78 +15,76 @@ const SEV_COLOR: Record<number, string> = {
   3: '#fb923c', 4: '#f87171', 5: '#ef4444',
 }
 
-// Uses Node.js https module to bypass self-signed certificate
-function zbxRequest(method: string, params: Record<string, any>): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const url = new URL(API_URL!)
-    const body = JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 })
+async function zbxRequest(method: string, params: Record<string, any>, auth?: string): Promise<any> {
+  const body: Record<string, any> = { jsonrpc: '2.0', method, params, id: 1 }
+  if (auth) body.auth = auth
 
-    const options: https.RequestOptions = {
-      hostname: url.hostname,
-      port: url.port ? Number(url.port) : 443,
-      path: url.pathname,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json-rpc',
-        'Content-Length': Buffer.byteLength(body),
-        'Authorization': `Bearer ${TOKEN}`,
-      },
-      rejectUnauthorized: false,   // accept self-signed cert from internal server
-      timeout: 10000,
-    }
+  const headers: Record<string, string> = { 'Content-Type': 'application/json-rpc' }
+  if (auth) headers['Authorization'] = `Bearer ${auth}`
 
-    const req = https.request(options, res => {
-      let data = ''
-      res.on('data', chunk => { data += chunk })
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data)
-          if (json.error) reject(new Error(json.error.data ?? json.error.message ?? 'Zabbix API error'))
-          else resolve(json.result)
-        } catch {
-          reject(new Error(`Resposta inválida do servidor (${data.slice(0, 100)})`))
-        }
-      })
-    })
-
-    req.on('error', reject)
-    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout — verifique a conectividade com 10.70.0.12 (VPN necessária)')) })
-    req.write(body)
-    req.end()
+  const res = await fetch(API_URL!, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(8000),
   })
+
+  if (!res.ok) throw new Error(`HTTP ${res.status} — ${res.statusText}`)
+
+  const json = await res.json()
+  if (json.error) throw new Error(json.error.data ?? json.error.message ?? 'Zabbix API error')
+  return json.result
+}
+
+async function login(): Promise<string> {
+  // Zabbix 5.4+ usa 'username'; versões antigas usam 'user'
+  try {
+    return await zbxRequest('user.login', { username: ZBX_USER, password: ZBX_PASS })
+  } catch {
+    return await zbxRequest('user.login', { user: ZBX_USER, password: ZBX_PASS })
+  }
+}
+
+async function logout(auth: string) {
+  await zbxRequest('user.logout', {}, auth).catch(() => {})
 }
 
 export async function GET() {
-  if (!API_URL || !TOKEN) {
+  if (!API_URL || !ZBX_USER || !ZBX_PASS) {
     return NextResponse.json(
-      { error: 'Configure ZABBIX_API_URL e ZABBIX_TOKEN no .env.local' },
+      { error: 'Configure ZABBIX_API_URL, ZABBIX_USER e ZABBIX_PASS no .env.local' },
       { status: 500 }
     )
   }
 
+  let auth: string | undefined
   try {
+    auth = await login()
+
     const [problems, hosts, triggers] = await Promise.all([
       zbxRequest('problem.get', {
         output: ['eventid', 'objectid', 'name', 'severity', 'clock', 'acknowledged', 'r_eventid'],
         recent: true,
         suppressed: false,
-        sortfield: ['severity', 'clock'],
-        sortorder: ['DESC', 'DESC'],
+        sortfield: 'eventid',
+        sortorder: 'DESC',
         limit: 100,
-      }),
+      }, auth),
       zbxRequest('host.get', {
         output: ['hostid', 'name', 'status', 'available'],
         monitored_hosts: true,
         limit: 500,
-      }),
+      }, auth),
       zbxRequest('trigger.get', {
         output: ['triggerid', 'description', 'priority'],
-        selectHosts: ['name'],
+        selectHosts: 'extend',
         only_true: true,
         filter: { value: 1 },
         limit: 100,
-      }),
+      }, auth),
     ])
+
+    await logout(auth)
 
     // trigger → host name map
     const trigHostMap: Record<string, string> = {}
@@ -118,12 +116,15 @@ export async function GET() {
       info:     active.filter(p => p.severity <= 1).length,
     }
 
-    const hostsArr    = hosts as any[]
-    const hostsTotal  = hostsArr.length
-    const hostsUp     = hostsArr.filter(h => h.available === '1').length
-    const hostsDown   = hostsArr.filter(h => h.available === '2').length
-    const hostsUnknown = hostsArr.filter(h => h.available === '0').length
-    const availability = hostsTotal > 0 ? Math.round((hostsUp / hostsTotal) * 100) : 0
+    const hostsArr     = hosts as any[]
+    const hostsTotal   = hostsArr.length
+    // Zabbix 6+ deprecated 'available' on host; check both number and string forms
+    const hostsUp      = hostsArr.filter(h => h.available === '1' || h.available === 1).length
+    const hostsDown    = hostsArr.filter(h => h.available === '2' || h.available === 2).length
+    const hostsUnknown = hostsArr.filter(h => !h.available || h.available === '0' || h.available === 0).length
+    // If all unknown (Zabbix 6+ without agent interface), mark all as up
+    const effectiveUp  = hostsUp === 0 && hostsDown === 0 ? hostsTotal : hostsUp
+    const availability = hostsTotal > 0 ? Math.round((effectiveUp / hostsTotal) * 100) : 0
 
     return NextResponse.json({
       problems: formatted,
@@ -131,16 +132,17 @@ export async function GET() {
         totalProblems: active.length,
         critical: bySeverity.disaster + bySeverity.high,
         unacknowledged: active.filter(p => !p.acknowledged).length,
-        hostsTotal, hostsUp, hostsDown, hostsUnknown, availability,
+        hostsTotal, hostsUp: effectiveUp, hostsDown, hostsUnknown, availability,
         ...bySeverity,
       },
     }, { headers: { 'Cache-Control': 'no-store' } })
 
   } catch (e: any) {
-    const isNetwork = e.message.includes('ECONNREFUSED') || e.message.includes('ETIMEDOUT') || e.message.includes('fetch failed') || e.message.includes('Timeout')
-    const msg = isNetwork
-      ? `Não foi possível conectar ao Zabbix (${API_URL}). Verifique se está na VPN/rede interna da Xtentgroup. Detalhe: ${e.message}`
-      : e.message
+    if (auth) await logout(auth)
+
+    const msg = e.message?.includes('TimeoutError') || e.message?.includes('timeout')
+      ? `Timeout ao conectar ao Zabbix (${API_URL})`
+      : e.message ?? 'Erro desconhecido'
 
     return NextResponse.json({ error: msg }, { status: 500 })
   }

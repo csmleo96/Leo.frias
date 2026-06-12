@@ -20,18 +20,18 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
     }
 
-    // Calcular próxima execução (09:00 AM São Paulo)
+    // Próxima execução: 09:00 AM São Paulo = 12:00 UTC (UTC-3, sem horário de verão em junho)
     const now = new Date()
-    const nextExecution = new Date(now)
-    nextExecution.setHours(9, 0, 0, 0)
+    const nowUTC = now.getTime()
 
-    // Se já passou das 09:00 hoje, próxima execução é amanhã
-    if (now.getHours() >= 9) {
-      nextExecution.setDate(nextExecution.getDate() + 1)
-    }
+    // Calcular 12:00 UTC de hoje
+    const todayUTC = new Date(now)
+    todayUTC.setUTCHours(12, 0, 0, 0)
 
-    // Converter para UTC para retornar
-    const nextExecutionUTC = new Date(nextExecution.getTime() + 3 * 60 * 60 * 1000) // São Paulo é UTC-3
+    // Se já passou das 12:00 UTC hoje, próxima é amanhã
+    const nextExecutionUTC = nowUTC >= todayUTC.getTime()
+      ? new Date(todayUTC.getTime() + 86400000)
+      : todayUTC
 
     // Última execução
     const lastLog = logs?.[0]
@@ -49,7 +49,7 @@ export async function GET() {
     }))
 
     return NextResponse.json({
-      nextExecution: nextExecutionUTC.toISOString(),
+      nextExecution: nextExecutionUTC.toISOString(), // 12:00 UTC = 09:00 São Paulo
       lastExecution: lastExecution ? new Date(lastExecution).toISOString() : null,
       timezone: 'America/Sao_Paulo',
       schedule: '09:00 AM diariamente',
