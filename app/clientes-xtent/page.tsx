@@ -1,196 +1,343 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Plus, Trash2, Search, Loader2 } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
-import type { Client, ClientStatus } from '@/lib/supabase/types'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useState, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
+import { Building2, Users, UserCheck, AlertTriangle, ExternalLink, ChevronRight } from 'lucide-react'
 
-function initials(name: string) {
-  return name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase()
+// ─── Design tokens ───────────────────────────────────────────────────────────
+const BG      = '#0a1316'
+const CARD    = '#0d1a1e'
+const TEAL    = '#8fbfc2'
+const BORDER  = 'rgba(143,191,194,0.10)'
+const FONT_H: React.CSSProperties = { fontFamily: 'Space Grotesk, sans-serif' }
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface Company {
+  id: string
+  name: string
+  domain: string | null
+  industry: string | null
+  ownerId: string | null
+  lastActivityAt: string | null
+  createdAt: string | null
 }
 
-const avatarPalette = [
-  { bg: 'oklch(0.8 0.13 186 / 15%)', color: 'oklch(0.8 0.13 186)', border: 'oklch(0.8 0.13 186 / 30%)' },
-  { bg: 'oklch(0.7 0.18 280 / 15%)', color: 'oklch(0.7 0.18 280)', border: 'oklch(0.7 0.18 280 / 30%)' },
-  { bg: 'oklch(0.75 0.15 160 / 15%)', color: 'oklch(0.75 0.15 160)', border: 'oklch(0.75 0.15 160 / 30%)' },
-  { bg: 'oklch(0.75 0.18 55 / 15%)', color: 'oklch(0.75 0.18 55)', border: 'oklch(0.75 0.18 55 / 30%)' },
-  { bg: 'oklch(0.7 0.2 340 / 15%)', color: 'oklch(0.7 0.2 340)', border: 'oklch(0.7 0.2 340 / 30%)' },
-]
+type TabKey = 'todas' | 'clientes' | 'leads' | 'sem-atividade'
+type StatusKey = 'ativo' | 'atencao' | 'critico' | 'lead'
 
-export default function ClientesPage() {
-  const supabase = createClient()
-  const [clients, setClients] = useState<Client[]>([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState<ClientStatus | 'todos'>('todos')
-  const [open, setOpen] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', status: 'ativo' as ClientStatus })
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function daysSince(iso: string | null): number | null {
+  if (!iso) return null
+  return Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
+}
 
-  async function load() {
-    const { data } = await supabase.from('clients').select('*').order('created_at', { ascending: false })
-    setClients(data ?? [])
-    setLoading(false)
-  }
-  useEffect(() => { load() }, [])
+function fmtDate(iso: string | null): string {
+  if (!iso) return '—'
+  const d = daysSince(iso)!
+  if (d === 0) return 'hoje'
+  if (d === 1) return 'ontem'
+  return `${d}d atrás`
+}
 
-  const filtered = clients.filter(c => {
-    const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.email.toLowerCase().includes(search.toLowerCase()) ||
-      (c.company ?? '').toLowerCase().includes(search.toLowerCase())
-    return matchSearch && (filterStatus === 'todos' || c.status === filterStatus)
+// Lifecycle is not returned by the companies endpoint, so we derive status
+// purely from lastActivityAt days.  Companies with no activity and unknown
+// lifecycle default to "lead" appearance only when no date is ever present.
+function getStatus(lastActivityAt: string | null): StatusKey {
+  const d = daysSince(lastActivityAt)
+  if (d === null) return 'critico'   // no date at all → critical
+  if (d < 30)    return 'ativo'
+  if (d < 60)    return 'atencao'
+  return 'critico'
+}
+
+const STATUS_CONFIG: Record<StatusKey, { label: string; bg: string; color: string; border: string }> = {
+  ativo:    { label: 'Ativo',    bg: 'rgba(34,197,94,0.12)',  color: '#22c55e', border: 'rgba(34,197,94,0.25)'  },
+  atencao:  { label: 'Atenção',  bg: 'rgba(234,179,8,0.12)', color: '#eab308', border: 'rgba(234,179,8,0.25)'  },
+  critico:  { label: 'Crítico',  bg: 'rgba(239,68,68,0.12)', color: '#ef4444', border: 'rgba(239,68,68,0.25)'  },
+  lead:     { label: 'Lead',     bg: 'rgba(59,130,246,0.12)', color: '#60a5fa', border: 'rgba(59,130,246,0.25)' },
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+function KpiCard({ icon: Icon, label, value, sub, color = TEAL }: {
+  icon: React.ElementType
+  label: string
+  value: number | string
+  sub?: string
+  color?: string
+}) {
+  return (
+    <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 14, padding: '20px 22px', flex: 1, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <div style={{ width: 34, height: 34, borderRadius: 9, background: `${color}1a`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon size={16} color={color} />
+        </div>
+        <span style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>{label}</span>
+      </div>
+      <p style={{ ...FONT_H, fontSize: 26, fontWeight: 800, color: '#e2e8f0', margin: 0, lineHeight: 1 }}>{value}</p>
+      {sub && <p style={{ fontSize: 11, color: '#475569', margin: '6px 0 0' }}>{sub}</p>}
+    </div>
+  )
+}
+
+function StatusBadge({ status }: { status: StatusKey }) {
+  const cfg = STATUS_CONFIG[status]
+  return (
+    <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`, letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>
+      {cfg.label}
+    </span>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+export default function ClientesXtentPage() {
+  const router = useRouter()
+  const [activeTab, setActiveTab] = useState<TabKey>('todas')
+
+  // Parallel queries
+  const companiesQ = useQuery({
+    queryKey: ['clientes-xtent-companies'],
+    queryFn: () => fetch('/api/hubspot/companies?limit=50').then(r => r.json()),
+    staleTime: 3 * 60_000,
   })
 
-  async function addClient() {
-    if (!form.name.trim() || !form.email.trim()) return
-    setSaving(true)
-    const { data } = await supabase.from('clients').insert({ name: form.name, email: form.email, phone: form.phone || null, company: form.company || null, status: form.status }).select().single()
-    if (data) setClients(prev => [data, ...prev])
-    setForm({ name: '', email: '', phone: '', company: '', status: 'ativo' })
-    setOpen(false)
-    setSaving(false)
-  }
+  const dashboardQ = useQuery({
+    queryKey: ['clientes-xtent-dashboard'],
+    queryFn: () => fetch('/api/hubspot/dashboard').then(r => r.json()),
+    staleTime: 3 * 60_000,
+  })
 
-  async function deleteClient(id: string) {
-    await supabase.from('clients').delete().eq('id', id)
-    setClients(prev => prev.filter(c => c.id !== id))
-  }
+  const companies: Company[] = useMemo(() => companiesQ.data?.companies ?? [], [companiesQ.data])
+  const overview = dashboardQ.data?.overview ?? null
 
-  async function toggleStatus(client: Client) {
-    const next: ClientStatus = client.status === 'ativo' ? 'inativo' : 'ativo'
-    await supabase.from('clients').update({ status: next }).eq('id', client.id)
-    setClients(prev => prev.map(c => c.id === client.id ? { ...c, status: next } : c))
-  }
+  // ── KPI derivation ──────────────────────────────────────────────────────────
+  const totalEmpresas  = companiesQ.data?.total ?? companies.length
+  // Dashboard contacts counts cover lifecycle; fall back to local derivations.
+  const clientesAtivos = overview?.customers ?? 0
+  const totalLeads     = overview?.leads ?? 0
 
-  const ativos = clients.filter(c => c.status === 'ativo').length
+  const semAtividade = useMemo(
+    () => companies.filter(c => {
+      const d = daysSince(c.lastActivityAt)
+      return d === null || d > 60
+    }).length,
+    [companies]
+  )
+
+  // ── Filtering ────────────────────────────────────────────────────────────────
+  const filtered = useMemo(() => {
+    if (activeTab === 'todas') return companies
+    if (activeTab === 'sem-atividade') {
+      return companies.filter(c => {
+        const d = daysSince(c.lastActivityAt)
+        return d === null || d > 60
+      })
+    }
+    if (activeTab === 'clientes') {
+      return companies.filter(c => {
+        const d = daysSince(c.lastActivityAt)
+        return d !== null && d < 30
+      })
+    }
+    if (activeTab === 'leads') {
+      return companies.filter(c => {
+        const d = daysSince(c.lastActivityAt)
+        return d !== null && d >= 30 && d <= 60
+      })
+    }
+    return companies
+  }, [companies, activeTab])
+
+  const isLoading = companiesQ.isLoading || dashboardQ.isLoading
+  const hasError  = companiesQ.isError || dashboardQ.isError
+
+  // ── Styles ───────────────────────────────────────────────────────────────────
+  const P: React.CSSProperties = { minHeight: '100vh', background: BG, padding: '28px 32px', fontFamily: 'Inter, sans-serif', color: '#e2e8f0' }
+  const TH: React.CSSProperties = { fontSize: 11, color: TEAL, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '10px 14px', borderBottom: `1px solid rgba(143,191,194,0.08)`, textAlign: 'left', whiteSpace: 'nowrap' }
+  const TD: React.CSSProperties = { fontSize: 12, color: '#cbd5e1', padding: '10px 14px', borderBottom: `1px solid rgba(143,191,194,0.05)`, verticalAlign: 'middle' }
+
+  const TABS: { key: TabKey; label: string }[] = [
+    { key: 'todas',         label: 'Todas' },
+    { key: 'clientes',      label: 'Clientes' },
+    { key: 'leads',         label: 'Leads' },
+    { key: 'sem-atividade', label: 'Sem Atividade' },
+  ]
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-8">
+    <div style={P}>
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, flexWrap: 'wrap', gap: 16 }}>
         <div>
-          <h2 className="text-2xl font-bold text-white">Clientes</h2>
-          <p className="text-sm mt-1" style={{ color: 'oklch(0.56 0.02 230)' }}>
-            {ativos} ativos · {clients.length - ativos} inativos
-          </p>
+          <h1 style={{ ...FONT_H, fontSize: 24, fontWeight: 800, color: '#e2e8f0', margin: 0 }}>Clientes XTENT</h1>
+          <p style={{ fontSize: 13, color: '#475569', margin: '5px 0 0' }}>Visão geral de empresas e contatos via HubSpot</p>
         </div>
-        <Button onClick={() => setOpen(true)} className="gap-2" style={{ background: 'oklch(0.8 0.13 186)', color: 'oklch(0.11 0.02 250)' }}>
-          <Plus size={16} /> Novo Cliente
-        </Button>
-      </div>
-
-      {/* Search + filter */}
-      <div className="flex gap-3 mb-6">
-        <div className="relative flex-1 max-w-sm">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'oklch(0.45 0.02 230)' }} />
-          <Input className="pl-9" placeholder="Buscar por nome, email ou empresa..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        {(['todos', 'ativo', 'inativo'] as const).map(s => (
-          <button key={s} onClick={() => setFilterStatus(s)}
-            className="px-3 py-2 rounded-lg text-sm font-medium transition-all"
-            style={filterStatus === s
-              ? { background: 'oklch(0.8 0.13 186 / 15%)', color: 'oklch(0.8 0.13 186)', border: '1px solid oklch(0.8 0.13 186 / 30%)' }
-              : { background: 'oklch(0.15 0.02 250)', color: 'oklch(0.56 0.02 230)', border: '1px solid oklch(1 0 0 / 8%)' }}>
-            {s === 'todos' ? 'Todos' : s === 'ativo' ? 'Ativos' : 'Inativos'}
+        {/* Quick action buttons */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            onClick={() => router.push('/clientes-xtent/leads')}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, background: 'rgba(96,165,250,0.10)', border: '1px solid rgba(96,165,250,0.25)', color: '#60a5fa', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.15s' }}
+            onMouseOver={e => (e.currentTarget.style.opacity = '0.8')}
+            onMouseOut={e => (e.currentTarget.style.opacity = '1')}
+          >
+            Ver Leads <ChevronRight size={14} />
           </button>
-        ))}
+          <button
+            onClick={() => router.push('/clientes-xtent/ativos')}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, background: `${TEAL}1a`, border: `1px solid ${TEAL}40`, color: TEAL, fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.15s' }}
+            onMouseOver={e => (e.currentTarget.style.opacity = '0.8')}
+            onMouseOut={e => (e.currentTarget.style.opacity = '1')}
+          >
+            Ver Ativos <ChevronRight size={14} />
+          </button>
+        </div>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 size={24} className="animate-spin" style={{ color: 'oklch(0.8 0.13 186)' }} />
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="rounded-xl p-10 text-center text-sm"
-          style={{ background: 'oklch(0.15 0.02 250)', border: '1px solid oklch(1 0 0 / 8%)', color: 'oklch(0.45 0.02 230)' }}>
-          Nenhum cliente encontrado.
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtered.map((client, i) => {
-            const pal = avatarPalette[i % avatarPalette.length]
-            return (
-              <div key={client.id} className="rounded-xl p-5 transition-all"
-                style={{ background: 'oklch(0.15 0.02 250)', border: '1px solid oklch(1 0 0 / 8%)' }}>
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
-                      style={{ background: pal.bg, color: pal.color, border: `1px solid ${pal.border}` }}>
-                      {initials(client.name)}
-                    </div>
-                    <div>
-                      <p className="font-semibold text-white text-sm">{client.name}</p>
-                      <p className="text-xs" style={{ color: 'oklch(0.45 0.02 230)' }}>{client.company || '—'}</p>
-                    </div>
-                  </div>
-                  <button onClick={() => toggleStatus(client)}
-                    className="text-xs px-2 py-0.5 rounded-full font-medium transition-all"
-                    style={client.status === 'ativo'
-                      ? { background: 'oklch(0.75 0.15 160 / 15%)', color: 'oklch(0.75 0.15 160)', border: '1px solid oklch(0.75 0.15 160 / 30%)' }
-                      : { background: 'oklch(0.4 0.02 230 / 20%)', color: 'oklch(0.56 0.02 230)', border: '1px solid oklch(1 0 0 / 10%)' }}>
-                    {client.status === 'ativo' ? 'Ativo' : 'Inativo'}
-                  </button>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs" style={{ color: 'oklch(0.56 0.02 230)' }}>{client.email}</p>
-                  {client.phone && <p className="text-xs" style={{ color: 'oklch(0.56 0.02 230)' }}>{client.phone}</p>}
-                </div>
-                <div className="flex justify-end mt-4 pt-3" style={{ borderTop: '1px solid oklch(1 0 0 / 6%)' }}>
-                  <button onClick={() => deleteClient(client.id)} className="opacity-40 hover:opacity-100 hover:text-red-400 transition-opacity">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
+      {/* ── KPI Cards ───────────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: 16, marginBottom: 28, flexWrap: 'wrap' }}>
+        <KpiCard icon={Building2}     label="Total Empresas"      value={isLoading ? '…' : totalEmpresas.toLocaleString('pt-BR')}  color={TEAL}      />
+        <KpiCard icon={UserCheck}     label="Clientes Ativos"     value={isLoading ? '…' : clientesAtivos.toLocaleString('pt-BR')} color="#22c55e"   sub="lifecycle = customer" />
+        <KpiCard icon={Users}         label="Leads"               value={isLoading ? '…' : totalLeads.toLocaleString('pt-BR')}     color="#60a5fa"   sub="lifecycle = lead" />
+        <KpiCard icon={AlertTriangle} label="Sem Atividade 60d"   value={isLoading ? '…' : semAtividade.toLocaleString('pt-BR')}  color="#ef4444"   sub="nenhuma atividade registrada" />
+      </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Novo Cliente</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Nome *</Label>
-              <Input placeholder="Nome completo" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Email *</Label>
-              <Input type="email" placeholder="email@exemplo.com" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Telefone</Label>
-                <Input placeholder="(00) 00000-0000" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Status</Label>
-                <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v as ClientStatus }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ativo">Ativo</SelectItem>
-                    <SelectItem value="inativo">Inativo</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Empresa</Label>
-              <Input placeholder="Nome da empresa" value={form.company} onChange={e => setForm(f => ({ ...f, company: e.target.value }))} />
+      {/* ── Tab bar ─────────────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: CARD, borderRadius: 10, padding: 4, width: 'fit-content', border: `1px solid ${BORDER}` }}>
+        {TABS.map(tab => {
+          const isActive = activeTab === tab.key
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                padding: '7px 18px',
+                borderRadius: 7,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                border: 'none',
+                transition: 'all 0.15s',
+                background: isActive ? `${TEAL}20` : 'transparent',
+                color: isActive ? TEAL : '#64748b',
+                outline: isActive ? `1px solid ${TEAL}40` : 'none',
+              }}
+            >
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* ── Table card ──────────────────────────────────────────────────────── */}
+      <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 14, overflow: 'hidden' }}>
+        {isLoading ? (
+          <div style={{ textAlign: 'center', padding: '48px 0', color: TEAL, fontSize: 14 }}>
+            <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳</span>
+            &nbsp; Carregando empresas...
+          </div>
+        ) : hasError ? (
+          <div style={{ textAlign: 'center', padding: '48px 0', color: '#ef4444', fontSize: 14 }}>
+            Erro ao carregar dados do HubSpot. Verifique a conexão.
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: 'rgba(143,191,194,0.03)' }}>
+                  {['Empresa', 'Domínio', 'Setor', 'Responsável', 'Última Atividade', 'Status'].map(h => (
+                    <th key={h} style={TH}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ ...TD, textAlign: 'center', color: '#475569', padding: '36px 0' }}>
+                      Nenhuma empresa encontrada nesta categoria.
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map(company => {
+                    const status = getStatus(company.lastActivityAt)
+                    return (
+                      <tr
+                        key={company.id}
+                        style={{ transition: 'background 0.12s' }}
+                        onMouseOver={e => (e.currentTarget.style.background = 'rgba(143,191,194,0.04)')}
+                        onMouseOut={e => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        {/* Empresa */}
+                        <td style={{ ...TD, fontWeight: 600, color: '#e2e8f0', minWidth: 180 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{ width: 30, height: 30, borderRadius: 7, background: `${TEAL}15`, border: `1px solid ${TEAL}25`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              <Building2 size={13} color={TEAL} />
+                            </div>
+                            <span style={{ fontSize: 13 }}>{company.name}</span>
+                          </div>
+                        </td>
+
+                        {/* Domínio */}
+                        <td style={{ ...TD, minWidth: 150 }}>
+                          {company.domain ? (
+                            <a
+                              href={`https://${company.domain}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: TEAL, textDecoration: 'none', fontSize: 12 }}
+                            >
+                              {company.domain} <ExternalLink size={11} />
+                            </a>
+                          ) : <span style={{ color: '#374151' }}>—</span>}
+                        </td>
+
+                        {/* Setor */}
+                        <td style={{ ...TD, minWidth: 130, color: '#94a3b8', fontSize: 11 }}>
+                          {company.industry ?? <span style={{ color: '#374151' }}>—</span>}
+                        </td>
+
+                        {/* Responsável */}
+                        <td style={{ ...TD, minWidth: 130, color: '#94a3b8' }}>
+                          {company.ownerId
+                            ? <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(143,191,194,0.08)', color: '#8fbfc2', border: `1px solid ${BORDER}` }}>ID {company.ownerId}</span>
+                            : <span style={{ color: '#374151' }}>—</span>}
+                        </td>
+
+                        {/* Última Atividade */}
+                        <td style={{ ...TD, minWidth: 130 }}>
+                          {company.lastActivityAt ? (
+                            <span style={{ color: status === 'ativo' ? '#22c55e' : status === 'atencao' ? '#eab308' : '#ef4444', fontSize: 12 }}>
+                              {fmtDate(company.lastActivityAt)}
+                            </span>
+                          ) : (
+                            <span style={{ color: '#374151', fontSize: 12 }}>Sem atividade</span>
+                          )}
+                        </td>
+
+                        {/* Status */}
+                        <td style={{ ...TD, minWidth: 100 }}>
+                          <StatusBadge status={status} />
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+
+            {/* Footer row */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderTop: `1px solid rgba(143,191,194,0.06)` }}>
+              <span style={{ fontSize: 12, color: '#475569' }}>
+                Mostrando <strong style={{ color: '#64748b' }}>{filtered.length}</strong> de <strong style={{ color: '#64748b' }}>{totalEmpresas}</strong> empresas
+              </span>
+              <span style={{ fontSize: 11, color: '#374151' }}>
+                Dados via HubSpot · atualizado agora
+              </span>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button onClick={addClient} disabled={saving}>
-              {saving && <Loader2 size={14} className="mr-2 animate-spin" />} Salvar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        )}
+      </div>
+
+      {/* Spin keyframes (injected inline) */}
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }

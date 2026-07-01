@@ -1,7 +1,38 @@
 {
   "crons": [
     {
-      "path": "/api/reports/executive-daily-send",
+      "comment": "Relatório Executivo Consolidado da Carteira — 08:45 BRT (11:45 UTC)",
+      "path": "/api/reports/executive-portfolio/send",
+      "schedule": "45 11 * * *"
+    },
+    {
+      "comment": "Relatório Executivo Full (todos os dados) — 09:00 BRT (12:00 UTC)",
+      "path": "/api/reports/executive-full/send",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "comment": "Relatório Individual — ConnectPSP",
+      "path": "/api/reports/client/connectpsp/send",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "comment": "Relatório Individual — CSCE",
+      "path": "/api/reports/client/csce/send",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "comment": "Relatório Individual — Hospital ABC",
+      "path": "/api/reports/client/hospitalabc/send",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "comment": "Relatório Individual — Ticket Sports",
+      "path": "/api/reports/client/ticketsports/send",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "comment": "Relatório Individual — Lotus",
+      "path": "/api/reports/client/lotus/send",
       "schedule": "0 12 * * *"
     }
   ]

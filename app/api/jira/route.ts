@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     const res = await fetch(`${BASE}/rest/api/3/search/jql`, {
       method: 'POST',
       headers: { Authorization: auth, Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jql, maxResults: 50, fields: ['summary', 'status', 'issuetype', 'priority', 'assignee', 'project', 'updated', 'created'] }),
+      body: JSON.stringify({ jql, maxResults: 100, fields: ['summary', 'status', 'issuetype', 'priority', 'assignee', 'project', 'updated', 'created', 'duedate', 'customfield_10014'] }),
       cache: 'no-store',
     })
 
@@ -40,19 +40,33 @@ export async function GET(request: NextRequest) {
     }
 
     const data = await res.json()
-    const issues = (data.issues ?? []).map((i: any) => ({
-      key: i.key,
-      summary: i.fields.summary,
-      status: i.fields.status?.name ?? '—',
-      statusCategory: i.fields.status?.statusCategory?.key ?? 'undefined',
-      type: i.fields.issuetype?.name ?? '—',
-      priority: i.fields.priority?.name ?? '—',
-      assignee: i.fields.assignee?.displayName ?? null,
-      project: { key: i.fields.project?.key, name: i.fields.project?.name },
-      updated: i.fields.updated,
-      created: i.fields.created ?? null,
-      url: `${BASE}/browse/${i.key}`,
-    }))
+    const now = Date.now()
+    const issues = (data.issues ?? []).map((i: any) => {
+      const sprintArr = i.fields.customfield_10014
+      const activeSprint = Array.isArray(sprintArr)
+        ? (sprintArr.find((s: any) => s.state === 'active') ?? sprintArr[sprintArr.length - 1] ?? null)
+        : null
+      const dueDate = i.fields.duedate ?? null
+      const daysRemaining = dueDate
+        ? Math.ceil((new Date(dueDate).getTime() - now) / 86400000)
+        : null
+      return {
+        key: i.key,
+        summary: i.fields.summary,
+        status: i.fields.status?.name ?? '—',
+        statusCategory: i.fields.status?.statusCategory?.key ?? 'undefined',
+        type: i.fields.issuetype?.name ?? '—',
+        priority: i.fields.priority?.name ?? '—',
+        assignee: i.fields.assignee?.displayName ?? null,
+        project: { key: i.fields.project?.key, name: i.fields.project?.name },
+        updated: i.fields.updated,
+        created: i.fields.created ?? null,
+        dueDate,
+        daysRemaining,
+        sprint: activeSprint?.name ?? null,
+        url: `${BASE}/browse/${i.key}`,
+      }
+    })
 
     return NextResponse.json({ total: data.total, issues }, {
       headers: { 'Cache-Control': 'no-store' }

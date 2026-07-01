@@ -30,8 +30,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files — NEVER commit real credentials
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -39,3 +40,29 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Vault — sensitive data directories (never commit)
+/vault/secrets/
+/vault/temp/
+/vault/logs/
+/vault/backups/
+/vault/exports/
+/vault/audit/
+# Vault config and reports are intentionally tracked (no secrets inside)
+# /vault/config/ — OK to commit (no credentials)
+# /vault/reports/ — OK to commit (PDFs/HTML)
+
+# Runtime / local data
+/.data/
+dev-server.log
+*.log
+
+# Workspace files
+*.code-workspace
+
+# Playwright / test artifacts
+test-results/
+playwright-report/
+
+# OS
+Thumbs.db

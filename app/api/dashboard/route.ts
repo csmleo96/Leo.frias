@@ -9,11 +9,12 @@ export async function GET() {
   const sb = await createClient()
 
   // Parallel fetch all data
-  const [glpiRes, jiraRes, zabbixRes, operacoesSyncRes] = await Promise.all([
+  const [glpiRes, jiraRes, zabbixRes, operacoesSyncRes, hubspotData] = await Promise.all([
     fetch('http://localhost:3000/api/glpi', { cache: 'no-store' }).then(r => r.json()).catch(() => ({})),
     fetch('http://localhost:3000/api/jira', { cache: 'no-store' }).then(r => r.json()).catch(() => ({})),
     fetch('http://localhost:3000/api/zabbix', { cache: 'no-store' }).then(r => r.json()).catch(() => ({})),
     fetch('http://localhost:3000/api/operacoes', { cache: 'no-store' }).then(r => r.json()).catch(() => []),
+    fetch('http://localhost:3000/api/hubspot/dashboard', { cache: 'no-store' }).then(r => r.json()).catch(() => ({})),
   ])
 
   const glpiData = glpiRes || {}
@@ -26,6 +27,7 @@ export async function GET() {
   const jiraIssues = jiraData.issues || []
   const zabbixStats = zabbixData.stats || {}
   const zabbixProblems = zabbixData.problems || []
+  const hubspotOverview = hubspotData.overview || {}
 
   // Get Supabase ticket data
   const glpiTickets = await sb.from('glpi_tickets').select('*').order('updated_at', { ascending: false })
@@ -192,6 +194,18 @@ export async function GET() {
         atRisk: jiraAtRisk,
         resolved: jiraResolved,
       },
+    },
+    commercial: {
+      totalContacts: hubspotOverview.totalContacts ?? 0,
+      leads: hubspotOverview.leads ?? 0,
+      customers: hubspotOverview.customers ?? 0,
+      openDeals: hubspotOverview.openDeals ?? 0,
+      wonDeals: hubspotOverview.wonDeals ?? 0,
+      lostDeals: hubspotOverview.lostDeals ?? 0,
+      openPipeline: hubspotOverview.openPipeline ?? 0,
+      totalRevenue: hubspotOverview.totalRevenue ?? 0,
+      winRate: hubspotOverview.winRate ?? 0,
+      conversionRate: hubspotOverview.conversionRate ?? 0,
     },
   }, { headers: { 'Cache-Control': 'no-store' } })
 }

@@ -25,156 +25,117 @@ function daysUntilDue(dueDate: string | null): number {
 }
 
 // ── Analysis Engine ────────────────────────────────────────────────────────
+const DONE_STATUSES = new Set(['done', 'closed', 'concluído', 'concluido', 'close', 'resolved'])
+const INPROGRESS_STATUSES = new Set(['em andamento', 'in progress', 'in-progress', 'on going', 'doing', 'desenvolvimento'])
+const BLOCKED_STATUSES = new Set(['blocked', 'bloqueado', 'impedimento', 'impediment', 'impedido'])
+const REVIEW_STATUSES = new Set(['code review', 'in review', 'review', 'testing', 'qa', 'em revisão', 'em revisao', 'homologação'])
+
+function jiraStatusGroup(status: string): 'todo' | 'inProgress' | 'blocked' | 'review' | 'done' {
+  const s = status.toLowerCase().trim()
+  if (DONE_STATUSES.has(s)) return 'done'
+  if (INPROGRESS_STATUSES.has(s)) return 'inProgress'
+  if (BLOCKED_STATUSES.has(s)) return 'blocked'
+  if (REVIEW_STATUSES.has(s)) return 'review'
+  return 'todo'
+}
+
 async function analyzeJira() {
   try {
     const r = await fetch('http://localhost:3000/api/jira', { cache: 'no-store' })
     const data = await r.json()
     const issues = data?.issues || []
 
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0)
+    const threeDaysAgo = Date.now() - 3 * 86400000
 
-    const completed = issues.filter((i: any) => {
-      if (!['Done', 'Closed'].includes(i.status)) return false
-      const updated = new Date(i.updated)
-      updated.setHours(0, 0, 0, 0)
-      return updated >= today
-    })
-
-    const open = issues.filter((i: any) => !['Done', 'Closed'].includes(i.status))
-    const critical = open.filter((i: any) => ['Highest', 'High'].includes(i.priority))
-    const overdue = open.filter((i: any) => i.dueDate && isOverdue(i.dueDate))
-    const dueSoon = open.filter((i: any) => i.dueDate && daysUntilDue(i.dueDate) > 0 && daysUntilDue(i.dueDate) <= 3)
-    const unassigned = open.filter((i: any) => !i.assignee)
-    const noDueDate = open.filter((i: any) => !i.dueDate)
-
-    // Agrupar por projeto com detalhes completos
-    const projectMap: Record<string, any> = {}
-
-    issues.forEach((i: any) => {
-      const projKey = i.project?.key || 'OTHER'
-      const projName = i.project?.name || 'Outros Projetos'
-
-      if (!projectMap[projKey]) {
-        projectMap[projKey] = {
-          key: projKey,
-          name: projName,
-          total: 0,
-          open: 0,
-          completed: 0,
-          inProgress: 0,
-          critical: 0,
-          overdue: 0,
-          dueSoon: 0,
-          unassigned: 0,
-          tickets: [],
-        }
-      }
-
-      const isCompleted = ['Done', 'Closed'].includes(i.status)
-      const isOpen = !isCompleted
-      const isInProgress = ['Em Andamento', 'In Progress', 'em andamento'].includes(i.status)
-
-      projectMap[projKey].total += 1
-      if (isCompleted) projectMap[projKey].completed += 1
-      if (isOpen) projectMap[projKey].open += 1
-      if (isInProgress) projectMap[projKey].inProgress += 1
-      if (isOpen && ['Highest', 'High'].includes(i.priority)) projectMap[projKey].critical += 1
-      if (isOpen && i.dueDate && isOverdue(i.dueDate)) projectMap[projKey].overdue += 1
-      if (isOpen && i.dueDate && daysUntilDue(i.dueDate) > 0 && daysUntilDue(i.dueDate) <= 3) projectMap[projKey].dueSoon += 1
-      if (isOpen && !i.assignee) projectMap[projKey].unassigned += 1
-
-      projectMap[projKey].tickets.push({
+    const mapIssue = (i: any) => {
+      const group = jiraStatusGroup(i.status)
+      const isDone = group === 'done'
+      const isOverdueFlag = !isDone && !!i.dueDate && isOverdue(i.dueDate)
+      const dueSoonFlag = !isDone && !isOverdueFlag && !!i.dueDate && daysUntilDue(i.dueDate) >= 0 && daysUntilDue(i.dueDate) <= 3
+      const isStale = !isDone && new Date(i.updated).getTime() < threeDaysAgo
+      const doneTodayFlag = isDone && new Date(i.updated) >= todayStart
+      return {
         key: i.key,
         summary: i.summary,
         status: i.status,
+        statusGroup: group,
         priority: i.priority,
-        assignee: i.assignee?.displayName || 'Não atribuído',
-        dueDate: i.dueDate || null,
+        assignee: i.assignee ?? null,
+        project: i.project?.key ?? 'OTHER',
+        projectName: i.project?.name ?? 'Outros',
+        sprint: i.sprint ?? null,
+        dueDate: i.dueDate ?? null,
+        daysRemaining: i.daysRemaining ?? null,
+        created: i.created,
+        updated: i.updated,
         url: i.url,
-        isCompleted,
-        isOverdue: isOpen && i.dueDate ? isOverdue(i.dueDate) : false,
-        isDueSoon: isOpen && i.dueDate ? (daysUntilDue(i.dueDate) > 0 && daysUntilDue(i.dueDate) <= 3) : false,
-        daysUntilDue: i.dueDate ? daysUntilDue(i.dueDate) : null,
-      })
+        isDone,
+        isOverdue: isOverdueFlag,
+        isDueSoon: dueSoonFlag,
+        isDoneToday: doneTodayFlag,
+        isStale,
+      }
+    }
+
+    const mapped = issues.map(mapIssue)
+    const open = mapped.filter((i: any) => !i.isDone)
+    const completed = mapped.filter((i: any) => i.isDone)
+    const doneToday = mapped.filter((i: any) => i.isDoneToday)
+    const critical = open.filter((i: any) => ['Highest', 'High'].includes(i.priority))
+    const overdueList = open.filter((i: any) => i.isOverdue)
+    const dueSoon = open.filter((i: any) => i.isDueSoon)
+    const unassigned = open.filter((i: any) => !i.assignee)
+    const stale = open.filter((i: any) => i.isStale)
+
+    const groups = {
+      todo: open.filter((i: any) => i.statusGroup === 'todo' && !i.isOverdue),
+      inProgress: open.filter((i: any) => i.statusGroup === 'inProgress' && !i.isOverdue),
+      blocked: open.filter((i: any) => i.statusGroup === 'blocked'),
+      review: open.filter((i: any) => i.statusGroup === 'review'),
+      doneToday,
+      overdue: overdueList,
+    }
+
+    // Agrupar por projeto
+    const projectMap: Record<string, any> = {}
+    mapped.forEach((i: any) => {
+      if (!projectMap[i.project]) {
+        projectMap[i.project] = { key: i.project, name: i.projectName, total: 0, open: 0, completed: 0, inProgress: 0, critical: 0, overdue: 0, dueSoon: 0, unassigned: 0, tickets: [] }
+      }
+      const p = projectMap[i.project]
+      p.total++
+      if (i.isDone) p.completed++; else p.open++
+      if (i.statusGroup === 'inProgress') p.inProgress++
+      if (!i.isDone && ['Highest', 'High'].includes(i.priority)) p.critical++
+      if (i.isOverdue) p.overdue++
+      if (i.isDueSoon) p.dueSoon++
+      if (!i.isDone && !i.assignee) p.unassigned++
+      p.tickets.push(i)
     })
 
-    // Ordenar tickets em cada projeto
-    Object.keys(projectMap).forEach(projKey => {
-      const tickets = projectMap[projKey].tickets
-      tickets.sort((a: any, b: any) => {
-        // Atrasados primeiro
-        if (a.isOverdue && !b.isOverdue) return -1
-        if (!a.isOverdue && b.isOverdue) return 1
-        // Vencendo em breve
-        if (a.isDueSoon && !b.isDueSoon) return -1
-        if (!a.isDueSoon && b.isDueSoon) return 1
-        // Em andamento
-        if (a.status === 'Em Andamento' && b.status !== 'Em Andamento') return -1
-        // Não iniciados
-        if (a.status === 'Não Iniciado' && b.status !== 'Não Iniciado') return 1
-        // Concluídos por último
-        if (a.isCompleted && !b.isCompleted) return 1
-        if (!a.isCompleted && b.isCompleted) return -1
-        return 0
-      })
-    })
-
-    // Itens críticos (para seção especial)
-    const criticalItems = []
+    const criticalItems: any[] = []
     Object.values(projectMap).forEach((proj: any) => {
       proj.tickets.forEach((t: any) => {
-        if (t.isOverdue || (t.priority && ['Highest', 'High'].includes(t.priority)) ||
-            !t.assignee || (t.isDueSoon)) {
-          criticalItems.push({
-            key: t.key,
-            summary: t.summary,
-            project: proj.name,
-            priority: t.priority,
-            assignee: t.assignee,
-            issue: t.isOverdue ? '🔴 Atrasado' : t.isDueSoon ? '🟠 Vence em breve' : t.priority && ['Highest', 'High'].includes(t.priority) ? '⚠️ Crítico' : '👤 Sem responsável',
-          })
+        if (t.isOverdue || t.isDueSoon || ['Highest', 'High'].includes(t.priority) || !t.assignee) {
+          criticalItems.push({ key: t.key, summary: t.summary, project: proj.name, priority: t.priority, assignee: t.assignee, status: t.status, dueDate: t.dueDate, daysRemaining: t.daysRemaining, isOverdue: t.isOverdue, isDueSoon: t.isDueSoon, url: t.url })
         }
       })
     })
 
     return {
-      total: issues.length,
-      open: open.length,
-      completed: completed.length,
-      completedToday: completed.length,
-      critical: critical.length,
-      overdue: overdue.length,
-      dueSoon: dueSoon.length,
-      unassigned: unassigned.length,
-      noDueDate: noDueDate.length,
-      projectsData: projectMap,
-      criticalItems: criticalItems.slice(0, 15),
-      completedDetails: completed.slice(0, 5).map((i: any) => ({
-        key: i.key,
-        summary: i.summary,
-        assignee: i.assignee?.displayName || 'Não atribuído',
-        project: i.project?.name || i.projectKey,
-        updated: i.updated,
-      })),
-      overdueDetails: overdue.slice(0, 10).map((i: any) => ({
-        key: i.key,
-        summary: i.summary,
-        assignee: i.assignee?.displayName || 'Não atribuído',
-        dueDate: i.dueDate,
-        daysOverdue: -daysUntilDue(i.dueDate),
-        priority: i.priority,
-        project: i.project?.name || i.projectKey,
-      })),
-      criticalDetails: critical.slice(0, 10).map((i: any) => ({
-        key: i.key,
-        summary: i.summary,
-        assignee: i.assignee?.displayName || 'Não atribuído',
-        dueDate: i.dueDate,
-        daysUntilDue: daysUntilDue(i.dueDate),
-        priority: i.priority,
-        project: i.project?.name || i.projectKey,
-      })),
+      total: issues.length, open: open.length, completed: completed.length,
+      completedToday: doneToday.length, critical: critical.length,
+      overdue: overdueList.length, dueSoon: dueSoon.length,
+      unassigned: unassigned.length, stale: stale.length,
+      noDueDate: open.filter((i: any) => !i.dueDate).length,
+      groups, projectsData: projectMap,
+      allTickets: mapped,
+      criticalItems: criticalItems.slice(0, 20),
+      completedDetails: doneToday.slice(0, 10),
+      overdueDetails: overdueList.slice(0, 20),
+      criticalDetails: critical.slice(0, 10),
+      staleDetails: stale.slice(0, 10),
     }
   } catch (error) {
     console.error('Erro ao analisar Jira:', error)
@@ -187,46 +148,105 @@ async function analyzeGLPI() {
     const r = await fetch('http://localhost:3000/api/glpi', { cache: 'no-store' })
     const data = await r.json()
     const stats = data?.stats || {}
-    const tickets = data?.tickets || []
+    const tickets: any[] = data?.tickets || []
 
-    const open = tickets.filter((t: any) => ![5, 6].includes(t.status))
-    const unattended = tickets.filter((t: any) => {
-      if ([5, 6].includes(t.status)) return false // Resolved
-      return !t.assignee || hoursAgo(t.dateCreation || '') > 24
-    })
+    const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0)
+    const threeDaysAgo = Date.now() - 3 * 86400000
 
-    const critical = open.filter((t: any) => t.priority >= 5)
-    const overDueTickets = open.filter((t: any) => {
-      if (!t.slaDeadline) return false
-      return new Date(t.slaDeadline) < new Date()
-    })
+    const openTickets = tickets.filter((t: any) => ![5, 6].includes(t.status))
+    const resolved = tickets.filter((t: any) => [5, 6].includes(t.status))
+
+    const groups = {
+      open: tickets.filter((t: any) => t.status === 1),
+      inProgress: tickets.filter((t: any) => [2, 3].includes(t.status)),
+      pending: tickets.filter((t: any) => t.status === 4),
+      resolvedToday: resolved.filter((t: any) => {
+        const d = t.dateMod ? new Date(String(t.dateMod)) : null
+        return d && d >= todayStart
+      }),
+      overdue: openTickets.filter((t: any) => {
+        const modMs = t.dateMod ? new Date(String(t.dateMod)).getTime() : 0
+        return modMs > 0 && modMs < threeDaysAgo
+      }),
+    }
+
+    const critical = openTickets.filter((t: any) => t.priority >= 5)
+    const unattended = openTickets.filter((t: any) => !t.assignee || hoursAgo(t.dateCreation || '') > 24)
 
     return {
-      total: stats.total || 0,
-      open: open.length,
-      resolved: (stats.solved ?? 0) + (stats.closed ?? 0),
+      total: stats.total || tickets.length,
+      open: openTickets.length,
+      resolved: resolved.length,
+      resolvedToday: groups.resolvedToday.length,
       critical: critical.length,
-      pending: stats.pending || 0,
+      pending: groups.pending.length,
       unattended: unattended.length,
-      overdue: overDueTickets.length,
-      unattendedDetails: unattended.slice(0, 10).map((t: any) => ({
-        id: t.id,
-        title: t.title,
-        priority: t.priority,
-        category: t.typeName || 'General',
-        dateCreation: t.dateCreation,
-        hoursWaiting: hoursAgo(t.dateCreation || ''),
-      })),
-      criticalDetails: critical.slice(0, 10).map((t: any) => ({
-        id: t.id,
-        title: t.title,
-        priority: t.priority,
-        assignee: t.assignee || 'Unassigned',
-        dateCreation: t.dateCreation,
-      })),
+      overdue: groups.overdue.length,
+      groups,
+      allTickets: tickets,
+      unattendedDetails: unattended.slice(0, 10),
+      criticalDetails: critical.slice(0, 10),
     }
   } catch (error) {
     console.error('Erro ao analisar GLPI:', error)
+    return null
+  }
+}
+
+async function analyzeZabbix() {
+  try {
+    const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+    const r = await fetch(`${base}/api/zabbix`, { cache: 'no-store' })
+    if (!r.ok) return null
+    const data = await r.json()
+    if (data.error) return null
+    const stats = data.stats ?? {}
+    const problems: any[] = data.problems ?? []
+    const active = problems.filter((p: any) => !p.resolved)
+    return {
+      totalProblems:  stats.totalProblems ?? 0,
+      critical:       (stats.disaster ?? 0) + (stats.high ?? 0),
+      disaster:       stats.disaster ?? 0,
+      high:           stats.high ?? 0,
+      average:        stats.average ?? 0,
+      warning:        stats.warning ?? 0,
+      unacknowledged: stats.unacknowledged ?? 0,
+      hostsTotal:     stats.hostsTotal ?? 0,
+      hostsUp:        stats.hostsUp ?? 0,
+      hostsDown:      stats.hostsDown ?? 0,
+      availability:   stats.availability ?? 0,
+      criticalProblems: active.filter((p: any) => p.severity >= 4).slice(0, 5),
+    }
+  } catch (error) {
+    console.error('Erro ao analisar Zabbix:', error)
+    return null
+  }
+}
+
+async function analyzeDatadog() {
+  try {
+    const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+    const r = await fetch(`${base}/api/datadog`, { cache: 'no-store' })
+    if (!r.ok) return null
+    const data = await r.json()
+    if (!data.configured || data.error) return null
+    const summary = data.summary ?? {}
+    const hosts = data.hosts ?? {}
+    const monitors: any[] = data.monitors ?? []
+    return {
+      totalMonitors: summary.total ?? 0,
+      ok:    summary.ok    ?? 0,
+      warn:  summary.warn  ?? 0,
+      alert: summary.alert ?? 0,
+      noData: summary.noData ?? 0,
+      hostsTotal: hosts.total ?? 0,
+      hostsUp:    hosts.up   ?? 0,
+      hostsDown:  hosts.down ?? 0,
+      alertMonitors: monitors.filter((m: any) => m.status === 'Alert').slice(0, 5),
+      warnMonitors:  monitors.filter((m: any) => m.status === 'Warn').slice(0, 5),
+    }
+  } catch (error) {
+    console.error('Erro ao analisar Datadog:', error)
     return null
   }
 }
@@ -239,17 +259,15 @@ function groupBy(arr: any[], key: string): Record<string, number> {
   }, {})
 }
 
-function determineHealth(jira: any, glpi: any): string {
+function determineHealth(jira: any, glpi: any, zabbix: any, datadog: any): string {
   const issues: string[] = []
 
-  // Check Jira
   if (jira) {
     if (jira.overdue > 5) issues.push('overdue-jira')
     if (jira.critical > 3) issues.push('critical-jira')
     if (jira.unassigned > 5) issues.push('unassigned-jira')
   }
 
-  // Check GLPI
   if (glpi) {
     if (glpi.overdue > 0) issues.push('overdue-glpi')
     if (glpi.critical > 5) issues.push('critical-glpi')
@@ -257,30 +275,38 @@ function determineHealth(jira: any, glpi: any): string {
     if (glpi.pending > 10) issues.push('pending-glpi')
   }
 
+  if (zabbix) {
+    if (zabbix.disaster > 0) issues.push('disaster-zabbix')
+    if (zabbix.high > 2) issues.push('high-zabbix')
+    if (zabbix.hostsDown > 0) issues.push('hosts-down-zabbix')
+    if (zabbix.availability < 95) issues.push('availability-zabbix')
+  }
+
+  if (datadog) {
+    if (datadog.alert > 5) issues.push('alert-datadog')
+    if (datadog.hostsDown > 0) issues.push('hosts-down-datadog')
+  }
+
   if (issues.length >= 3) return 'critical'
   if (issues.length >= 2) return 'attention'
   return 'healthy'
 }
 
-function generateExecutiveSummary(jira: any, glpi: any, health: string): string {
+function generateExecutiveSummary(jira: any, glpi: any, health: string, zabbix: any, datadog: any): string {
   const date = new Date().toLocaleDateString('pt-BR')
   const jiraCompleted = jira?.completedToday || 0
   const jiraOverdue = jira?.overdue || 0
   const glpiUnattended = glpi?.unattended || 0
   const totalOpen = (jira?.open || 0) + (glpi?.open || 0)
 
-  const lines = [
-    `Período: ${date}`,
-    '',
-    'Durante o período analisado, a operação ',
-  ]
+  const lines = [`Período: ${date}.`]
 
   if (health === 'healthy') {
-    lines.push('manteve estabilidade geral, com indicadores dentro dos parâmetros esperados.')
+    lines.push('A operação manteve estabilidade geral, com indicadores dentro dos parâmetros esperados.')
   } else if (health === 'attention') {
-    lines.push('apresenta sinais de atenção que requerem acompanhamento executivo.')
+    lines.push('A operação apresenta sinais de atenção que requerem acompanhamento executivo.')
   } else {
-    lines.push('identifica múltiplas áreas com risco que exigem ação imediata da liderança.')
+    lines.push('A operação identifica múltiplas áreas com risco que exigem ação imediata da liderança.')
   }
 
   lines.push(`Foram concluídas ${jiraCompleted} atividades estratégicas, permanecendo ${totalOpen} pendências em aberto.`)
@@ -292,14 +318,24 @@ function generateExecutiveSummary(jira: any, glpi: any, health: string): string 
     lines.push(`Identificamos ${issues.join(' e ')}, que exigem acompanhamento imediato.`)
   }
 
-  lines.push(
-    `O backlog consolidado está em ${totalOpen} itens, com ${(jira?.critical || 0) + (glpi?.critical || 0)} demandas críticas requerendo priorização.`
-  )
+  lines.push(`O backlog consolidado está em ${totalOpen} itens, com ${(jira?.critical || 0) + (glpi?.critical || 0)} demandas críticas requerendo priorização.`)
+
+  if (zabbix && zabbix.totalProblems > 0) {
+    lines.push(`Infraestrutura Zabbix: ${zabbix.totalProblems} problema(s) ativo(s) em ${zabbix.hostsTotal} hosts monitorados — disponibilidade ${zabbix.availability}%.`)
+  } else if (zabbix && zabbix.hostsTotal > 0) {
+    lines.push(`Infraestrutura Zabbix: ${zabbix.hostsUp}/${zabbix.hostsTotal} hosts online (${zabbix.availability}% disponibilidade).`)
+  }
+
+  if (datadog && datadog.alert > 0) {
+    lines.push(`Observabilidade Datadog: ${datadog.alert} monitor(es) em alerta de um total de ${datadog.totalMonitors}.`)
+  } else if (datadog && datadog.totalMonitors > 0) {
+    lines.push(`Observabilidade Datadog: ${datadog.ok}/${datadog.totalMonitors} monitors OK.`)
+  }
 
   return lines.join(' ')
 }
 
-function generateRisks(jira: any, glpi: any): any[] {
+function generateRisks(jira: any, glpi: any, zabbix: any, datadog: any): any[] {
   const risks = []
 
   if (jira?.overdue > 5) {
@@ -346,10 +382,43 @@ function generateRisks(jira: any, glpi: any): any[] {
     })
   }
 
+  if (zabbix?.disaster > 0) {
+    risks.push({
+      type: 'infrastructure-risk',
+      severity: 'critical',
+      title: `${zabbix.disaster} Problema(s) Nível Disaster no Zabbix`,
+      description: `Existem ${zabbix.disaster} alerta(s) de nível máximo na infraestrutura monitorada pelo Zabbix.`,
+      impact: 'Risco de indisponibilidade de serviços críticos e violação de SLA',
+      action: 'Acionar equipe de infraestrutura imediatamente',
+    })
+  }
+
+  if (zabbix?.hostsDown > 0) {
+    risks.push({
+      type: 'infrastructure-risk',
+      severity: 'high',
+      title: `${zabbix.hostsDown} Host(s) Offline no Zabbix`,
+      description: `${zabbix.hostsDown} host(s) monitorado(s) não estão respondendo (${zabbix.hostsUp}/${zabbix.hostsTotal} online).`,
+      impact: 'Impacto direto em disponibilidade e SLA dos clientes',
+      action: 'Verificar conectividade e status dos servidores afetados',
+    })
+  }
+
+  if (datadog?.alert > 5) {
+    risks.push({
+      type: 'observability-risk',
+      severity: 'high',
+      title: `${datadog.alert} Monitors Datadog em Alerta`,
+      description: `${datadog.alert} monitores de observabilidade reportam estado de alerta, indicando anomalias nos serviços.`,
+      impact: 'Degradação de performance ou disponibilidade de serviços',
+      action: 'Revisar dashboards Datadog e acionar times responsáveis',
+    })
+  }
+
   return risks
 }
 
-function generateRecommendations(jira: any, glpi: any, health: string): string[] {
+function generateRecommendations(jira: any, glpi: any, health: string, zabbix: any, datadog: any): string[] {
   const recs = []
 
   if (jira?.overdueDetails && jira.overdueDetails.length > 0) {
@@ -368,6 +437,16 @@ function generateRecommendations(jira: any, glpi: any, health: string): string[]
     recs.push(`Acompanhamento executivo das ${(jira?.critical || 0) + (glpi?.critical || 0)} demandas críticas nos próximos 7 dias`)
   }
 
+  if (zabbix?.disaster > 0 || zabbix?.hostsDown > 0) {
+    recs.push(`Ação imediata de infraestrutura: ${zabbix?.disaster ?? 0} disaster(s) e ${zabbix?.hostsDown ?? 0} host(s) offline no Zabbix`)
+  } else if (zabbix?.high > 0) {
+    recs.push(`Monitorar e resolver ${zabbix.high} alerta(s) de alta severidade no Zabbix nas próximas 4 horas`)
+  }
+
+  if (datadog?.alert > 0) {
+    recs.push(`Investigar ${datadog.alert} monitor(es) Datadog em alerta e identificar causa raiz`)
+  }
+
   if (health !== 'healthy') {
     recs.push(`Avaliar alocação de recursos e redistribuir carga de trabalho entre equipes`)
   }
@@ -377,7 +456,63 @@ function generateRecommendations(jira: any, glpi: any, health: string): string[]
     recs.push(`Acompanhar tendências de backlog para próximos 7 dias`)
   }
 
-  return recs.slice(0, 5)
+  return recs.slice(0, 6)
+}
+
+// ── Health Score (0–100) ───────────────────────────────────────────────────
+// Pesos: SLA=25, Disponibilidade=20, Backup=15, DR=15, Storage=10, Chamados=10, Segurança=5
+function calculateHealthScore(jira: any, glpi: any, zabbix: any, datadog: any): { score: number; breakdown: Record<string, number> } {
+  // SLA — baseado em disponibilidade Zabbix
+  let sla = 25
+  if (zabbix?.availability != null) {
+    const av = zabbix.availability
+    if (av >= 99.9) sla = 25
+    else if (av >= 99.5) sla = 23
+    else if (av >= 99)   sla = 20
+    else if (av >= 98)   sla = 15
+    else if (av >= 95)   sla = 8
+    else                 sla = 3
+  }
+
+  // Disponibilidade — hosts online
+  let disponibilidade = 20
+  if (zabbix?.hostsTotal > 0) {
+    const ratio = zabbix.hostsTotal > 0 ? zabbix.hostsUp / zabbix.hostsTotal : 1
+    disponibilidade = Math.round(20 * ratio)
+    if (zabbix.disaster > 0) disponibilidade = Math.max(0, disponibilidade - 8)
+  }
+
+  // Datadog penaliza se houver alertas críticos
+  if (datadog?.alert > 5) disponibilidade = Math.max(0, disponibilidade - 5)
+
+  // Backup — sem integração ainda: assumir ok
+  const backup = 15
+
+  // DR — sem integração ainda: assumir ok
+  const dr = 15
+
+  // Storage — sem integração ainda: assumir ok
+  const storage = 10
+
+  // Chamados
+  let chamados = 10
+  const totalCritical = (jira?.critical || 0) + (glpi?.critical || 0)
+  const glpiUnattended = glpi?.unattended || 0
+  if (totalCritical > 10)    chamados -= 6
+  else if (totalCritical > 5) chamados -= 3
+  else if (totalCritical > 0) chamados -= 1
+  if (glpiUnattended > 10)   chamados = Math.max(0, chamados - 3)
+  if (jira?.overdue > 5)     chamados = Math.max(0, chamados - 2)
+
+  // Segurança — sem integração ainda: assumir ok
+  const seguranca = 5
+
+  const score = Math.max(0, Math.min(100, sla + disponibilidade + backup + dr + storage + chamados + seguranca))
+
+  return {
+    score,
+    breakdown: { sla, disponibilidade, backup, dr, storage, chamados, seguranca },
+  }
 }
 
 // ── Main Handler ───────────────────────────────────────────────────────────
@@ -387,25 +522,56 @@ export async function GET() {
   try {
     console.log('🚀 Gerando Executive Daily Report...')
 
-    const [jiraData, glpiData] = await Promise.all([analyzeJira(), analyzeGLPI()])
+    const [jiraData, glpiData, zabbixData, datadogData] = await Promise.all([
+      analyzeJira(), analyzeGLPI(), analyzeZabbix(), analyzeDatadog(),
+    ])
 
     if (!jiraData && !glpiData) {
       throw new Error('Falha ao coletar dados de Jira e GLPI')
     }
 
-    const health = determineHealth(jiraData, glpiData)
-    const executiveSummary = generateExecutiveSummary(jiraData, glpiData, health)
-    const risks = generateRisks(jiraData, glpiData)
-    const recommendations = generateRecommendations(jiraData, glpiData, health)
+    const health = determineHealth(jiraData, glpiData, zabbixData, datadogData)
+    const healthScoreResult = calculateHealthScore(jiraData, glpiData, zabbixData, datadogData)
+    const executiveSummary = generateExecutiveSummary(jiraData, glpiData, health, zabbixData, datadogData)
+    const risks = generateRisks(jiraData, glpiData, zabbixData, datadogData)
+    const recommendations = generateRecommendations(jiraData, glpiData, health, zabbixData, datadogData)
 
     const totalOpen = (jiraData?.open || 0) + (glpiData?.open || 0)
     const totalResolved = (jiraData?.completed || 0) + (glpiData?.resolved || 0)
     const totalCritical = (jiraData?.critical || 0) + (glpiData?.critical || 0)
 
+    // Build upcoming deadlines (Jira only — GLPI has no standard due dates)
+    const upcomingDeadlines: any[] = []
+    const jiraAllTickets: any[] = jiraData?.allTickets || []
+    jiraAllTickets.forEach((t: any) => {
+      if (!t.isDone && t.dueDate && t.daysRemaining !== null && t.daysRemaining <= 7) {
+        upcomingDeadlines.push({
+          sistema: 'Jira',
+          id: t.key,
+          titulo: t.summary,
+          responsavel: t.assignee ?? '—',
+          projeto: t.projectName,
+          prazo: t.dueDate,
+          diasRestantes: t.daysRemaining,
+          prioridade: t.priority,
+          status: t.status,
+          url: t.url,
+        })
+      }
+    })
+    upcomingDeadlines.sort((a, b) => a.diasRestantes - b.diasRestantes)
+
+    const staleItems = [
+      ...(jiraData?.staleDetails || []).map((t: any) => ({ sistema: 'Jira', id: t.key, titulo: t.summary, responsavel: t.assignee ?? '—', projeto: t.projectName, diasSemAtualizar: Math.floor((Date.now() - new Date(t.updated).getTime()) / 86400000) })),
+      ...(glpiData?.groups?.overdue || []).map((t: any) => ({ sistema: 'GLPI', id: String(t.id), titulo: t.title, responsavel: t.assignee ?? '—', projeto: t.category, diasSemAtualizar: t.daysSinceUpdate ?? 0 })),
+    ].sort((a, b) => b.diasSemAtualizar - a.diasSemAtualizar)
+
     const report = {
       generatedAt: new Date().toISOString(),
       executiveSummary,
       health,
+      healthScore: healthScoreResult.score,
+      healthScoreBreakdown: healthScoreResult.breakdown,
       metrics: {
         totalOpen,
         totalResolved,
@@ -415,16 +581,29 @@ export async function GET() {
         jiraUnassigned: jiraData?.unassigned || 0,
         glpiUnattended: glpiData?.unattended || 0,
         glpiPending: glpiData?.pending || 0,
+        glpiResolvedToday: glpiData?.resolvedToday || 0,
+        upcomingDeadlines: upcomingDeadlines.length,
+        staleItems: staleItems.length,
+        zabbixProblems: zabbixData?.totalProblems ?? 0,
+        zabbixCritical: zabbixData?.critical ?? 0,
+        zabbixAvailability: zabbixData?.availability ?? 0,
+        zabbixHostsDown: zabbixData?.hostsDown ?? 0,
+        datadogAlerts: datadogData?.alert ?? 0,
+        datadogMonitors: datadogData?.totalMonitors ?? 0,
       },
       jira: {
         total: jiraData?.total || 0,
         open: jiraData?.open || 0,
         completed: jiraData?.completed || 0,
+        completedToday: jiraData?.completedToday || 0,
         critical: jiraData?.critical || 0,
         overdue: jiraData?.overdue || 0,
         dueSoon: jiraData?.dueSoon || 0,
         unassigned: jiraData?.unassigned || 0,
+        stale: jiraData?.stale || 0,
+        groups: jiraData?.groups || {},
         projectsData: jiraData?.projectsData || {},
+        allTickets: jiraData?.allTickets || [],
         criticalItems: jiraData?.criticalItems || [],
         completedDetails: jiraData?.completedDetails || [],
         overdueDetails: jiraData?.overdueDetails || [],
@@ -434,12 +613,44 @@ export async function GET() {
         total: glpiData?.total || 0,
         open: glpiData?.open || 0,
         resolved: glpiData?.resolved || 0,
+        resolvedToday: glpiData?.resolvedToday || 0,
         critical: glpiData?.critical || 0,
         pending: glpiData?.pending || 0,
         unattended: glpiData?.unattended || 0,
+        overdue: glpiData?.overdue || 0,
+        groups: glpiData?.groups || {},
+        allTickets: glpiData?.allTickets || [],
         unattendedDetails: glpiData?.unattendedDetails || [],
         criticalDetails: glpiData?.criticalDetails || [],
       },
+      zabbix: zabbixData ? {
+        totalProblems:  zabbixData.totalProblems,
+        critical:       zabbixData.critical,
+        disaster:       zabbixData.disaster,
+        high:           zabbixData.high,
+        average:        zabbixData.average,
+        warning:        zabbixData.warning,
+        unacknowledged: zabbixData.unacknowledged,
+        hostsTotal:     zabbixData.hostsTotal,
+        hostsUp:        zabbixData.hostsUp,
+        hostsDown:      zabbixData.hostsDown,
+        availability:   zabbixData.availability,
+        criticalProblems: zabbixData.criticalProblems,
+      } : null,
+      datadog: datadogData ? {
+        totalMonitors: datadogData.totalMonitors,
+        ok:            datadogData.ok,
+        warn:          datadogData.warn,
+        alert:         datadogData.alert,
+        noData:        datadogData.noData,
+        hostsTotal:    datadogData.hostsTotal,
+        hostsUp:       datadogData.hostsUp,
+        hostsDown:     datadogData.hostsDown,
+        alertMonitors: datadogData.alertMonitors,
+        warnMonitors:  datadogData.warnMonitors,
+      } : null,
+      upcomingDeadlines,
+      staleItems,
       risks,
       recommendations,
     }

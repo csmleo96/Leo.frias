@@ -1,11 +1,10 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useEffect, useState, memo } from 'react'
+import { useEffect, useState } from 'react'
 import {
-  AlertTriangle, TrendingUp, TrendingDown, Activity, RefreshCw, Clock, Zap,
-  ChevronRight, ArrowUpRight, ArrowDownRight, Minus, Server, BarChart3, Target,
-  AlertCircle, CheckCircle2, Radio, Shield, Flame,
+  RefreshCw, UserPlus, Building2, TrendingUp, AlertTriangle, Layers,
+  Calendar, DollarSign, Users, Activity, Zap, ChevronRight, Clock,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -14,350 +13,323 @@ const T = '#8fbfc2'
 const CARD = '#0d1a1e'
 const BORDER = 'rgba(143,191,194,0.10)'
 const MUTED = 'rgba(243,250,250,0.45)'
-const H = { fontFamily: 'var(--font-heading), "Space Grotesk", sans-serif' }
+const H: React.CSSProperties = { fontFamily: 'var(--font-heading), "Space Grotesk", sans-serif' }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-function timeAgo(iso: string | null) {
-  if (!iso) return '—'
-  const d = Date.now() - new Date(iso).getTime()
-  if (d < 60000) return 'agora'
-  const m = Math.floor(d / 60000)
-  if (m < 60) return `${m}min`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h`
-  return `${Math.floor(h / 24)}d`
+function getGreeting(hour: number): string {
+  if (hour >= 0 && hour < 12) return 'Bom dia'
+  if (hour >= 12 && hour < 18) return 'Boa tarde'
+  return 'Boa noite'
 }
 
-function formatTime(d: Date) {
+function fmtBRL(n: number): string {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(n || 0)
+}
+
+function formatFullDate(d: Date): string {
+  return d.toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+function formatTime(d: Date): string {
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
-function formatDate(d: Date) {
-  return d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' })
-}
-
-function healthStatus(score: number) {
-  if (score >= 80) return { label: 'SAUDÁVEL', color: '#7dd3a8', bg: 'rgba(125,211,168,0.08)' }
-  if (score >= 60) return { label: 'ATENÇÃO', color: '#fbbf24', bg: 'rgba(251,191,36,0.08)' }
-  return { label: 'CRÍTICO', color: '#f87171', bg: 'rgba(248,113,113,0.08)' }
-}
-
-// ── Skeleton ───────────────────────────────────────────────────────────────
-const Sk = memo(({ w = '100%', h = '16px', r = '6px' }: any) => (
-  <div style={{
-    width: w, height: h, borderRadius: r,
-    background: 'linear-gradient(90deg, rgba(143,191,194,0.06) 25%, rgba(143,191,194,0.12) 50%, rgba(143,191,194,0.06) 75%)',
-    backgroundSize: '200% 100%', animation: 'shimmer 1.6s infinite',
-  }} />
-))
-
 // ── KPI Card ───────────────────────────────────────────────────────────────
-const KpiCard = memo(function KpiCard({
-  label, sublabel, value, icon: Icon, color, trend, loading, delay = 0,
-}: any) {
-  const TrendIcon = trend === 'up' ? ArrowUpRight : trend === 'down' ? ArrowDownRight : Minus
+interface KpiCardProps {
+  label: string
+  sublabel?: string
+  value: string | number | undefined
+  icon: React.ElementType
+  color: string
+  loading?: boolean
+}
 
+function KpiCard({ label, sublabel, value, icon: Icon, color, loading }: KpiCardProps) {
   return (
-    <div className="rounded-xl p-5 flex flex-col gap-3 transition-all duration-300"
+    <div
       style={{
-        background: CARD, border: `1px solid ${BORDER}`,
-        animation: `fadeIn 0.5s ease both`,
-        animationDelay: `${delay}ms`,
+        background: CARD,
+        border: `1px solid ${BORDER}`,
+        borderRadius: 14,
+        padding: 24,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        opacity: loading ? 0.55 : 1,
+        transition: 'border-color 0.2s, transform 0.2s, box-shadow 0.2s',
       }}
       onMouseEnter={e => {
         const el = e.currentTarget as HTMLElement
-        el.style.borderColor = `${color}30`
-        el.style.boxShadow = `0 0 20px ${color}0d`
+        el.style.borderColor = `${color}40`
         el.style.transform = 'translateY(-2px)'
+        el.style.boxShadow = `0 8px 24px ${color}12`
       }}
       onMouseLeave={e => {
         const el = e.currentTarget as HTMLElement
         el.style.borderColor = BORDER
-        el.style.boxShadow = 'none'
         el.style.transform = 'translateY(0)'
-      }}>
-      <div className="flex items-start justify-between">
-        <div className="w-10 h-10 rounded-lg flex items-center justify-center"
-          style={{ background: `${color}14`, border: `1px solid ${color}22` }}>
-          <Icon size={18} style={{ color }} />
+        el.style.boxShadow = 'none'
+      }}
+    >
+      {/* Top row: icon */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: '50%',
+            background: `${color}18`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Icon size={16} style={{ color }} />
         </div>
-        {trend && !loading && (
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
-            style={{
-              background: trend === 'up' ? 'rgba(248,113,113,0.12)' : 'rgba(125,211,168,0.12)',
-              color: trend === 'up' ? '#f87171' : '#7dd3a8',
-            }}>
-            <TrendIcon size={10} /> {trend === 'up' ? 'Alto' : 'Normal'}
+      </div>
+
+      {/* Value */}
+      <div
+        style={{
+          ...H,
+          fontSize: 36,
+          fontWeight: 800,
+          color: '#f3fafa',
+          lineHeight: 1,
+          letterSpacing: '-0.02em',
+        }}
+      >
+        {loading ? '—' : (value ?? '—')}
+      </div>
+
+      {/* Label + sublabel */}
+      <div>
+        <div
+          style={{
+            fontSize: 11,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            color: T,
+            fontWeight: 600,
+          }}
+        >
+          {label}
+        </div>
+        {sublabel && (
+          <div style={{ fontSize: 11, color: 'rgba(243,250,250,0.4)', marginTop: 2 }}>
+            {sublabel}
           </div>
         )}
       </div>
+    </div>
+  )
+}
 
-      {loading ? (
-        <div className="space-y-2"><Sk h="28px" w="50%" /><Sk h="11px" w="70%" /></div>
-      ) : (
-        <>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-bold tabular-nums" style={{ ...H, color: '#f3fafa' }}>
-              {value ?? '—'}
+// ── Pipeline Bar Chart ─────────────────────────────────────────────────────
+const pipelineStages = [
+  { label: 'Prospecção', value: 35, color: '#3b82f6' },
+  { label: 'Qualificação', value: 25, color: '#8fbfc2' },
+  { label: 'Proposta', value: 22, color: '#a78bfa' },
+  { label: 'Fechamento', value: 18, color: '#22c55e' },
+]
+
+function PipelineChart() {
+  return (
+    <div
+      style={{
+        background: CARD,
+        border: `1px solid ${BORDER}`,
+        borderRadius: 14,
+        padding: 24,
+      }}
+    >
+      <div style={{ marginBottom: 4 }}>
+        <div style={{ ...H, fontSize: 14, fontWeight: 700, color: '#f3fafa' }}>
+          Pipeline Comercial
+        </div>
+        <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>
+          Distribuição por estágio
+        </div>
+      </div>
+
+      <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {pipelineStages.map(stage => (
+          <div key={stage.label}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ fontSize: 12, color: '#f3fafa' }}>{stage.label}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: stage.color }}>
+                {stage.value}%
+              </span>
+            </div>
+            <div style={{ height: 6, borderRadius: 99, background: 'rgba(143,191,194,0.10)' }}>
+              <div
+                style={{
+                  height: '100%',
+                  borderRadius: 99,
+                  width: `${stage.value}%`,
+                  background: stage.color,
+                  transition: 'width 0.6s ease',
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 20, fontSize: 10, color: 'rgba(243,250,250,0.3)' }}>
+        * Dados do HubSpot
+      </div>
+    </div>
+  )
+}
+
+// ── Operational Status ─────────────────────────────────────────────────────
+interface StatusPanelProps {
+  openTickets: number
+  totalBreached: number
+  resolvedToday: number
+  loading?: boolean
+}
+
+function StatusPanel({ openTickets, totalBreached, resolvedToday, loading }: StatusPanelProps) {
+  const inProgress = Math.max(0, openTickets - totalBreached)
+
+  const rows = [
+    { label: 'Tickets Abertos', value: openTickets, color: '#f59e0b' },
+    { label: 'SLA Vencido', value: totalBreached, color: '#ef4444' },
+    { label: 'Em Andamento', value: inProgress, color: '#8fbfc2' },
+    { label: 'Resolvidos Hoje', value: resolvedToday, color: '#22c55e' },
+  ]
+
+  return (
+    <div
+      style={{
+        background: CARD,
+        border: `1px solid ${BORDER}`,
+        borderRadius: 14,
+        padding: 24,
+      }}
+    >
+      <div style={{ marginBottom: 4 }}>
+        <div style={{ ...H, fontSize: 14, fontWeight: 700, color: '#f3fafa' }}>
+          Status Operacional
+        </div>
+        <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>
+          Últimas 24 horas
+        </div>
+      </div>
+
+      <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 0 }}>
+        {rows.map((row, i) => (
+          <div
+            key={row.label}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '12px 0',
+              borderBottom: i < rows.length - 1 ? `1px solid rgba(143,191,194,0.07)` : 'none',
+            }}
+          >
+            <div
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: row.color,
+                flexShrink: 0,
+              }}
+            />
+            <span style={{ flex: 1, fontSize: 13, color: '#f3fafa' }}>{row.label}</span>
+            <span
+              style={{
+                fontSize: 16,
+                fontWeight: 700,
+                color: row.color,
+                opacity: loading ? 0.4 : 1,
+              }}
+            >
+              {loading ? '—' : row.value}
             </span>
           </div>
-          <div>
-            <p className="text-[11px] font-semibold" style={{ color }}>{label}</p>
-            <p className="text-[10px] mt-0.5" style={{ color: MUTED }}>{sublabel}</p>
-          </div>
-        </>
-      )}
+        ))}
+      </div>
     </div>
   )
-})
+}
 
-// ── Health Status Badge ────────────────────────────────────────────────────
-const HealthBadge = memo(function HealthBadge({ score, loading }: any) {
-  const h = score !== null ? healthStatus(score) : { label: '—', color: T, bg: BORDER }
+// ── Quick Access Card ──────────────────────────────────────────────────────
+interface QuickCardProps {
+  href: string
+  icon: React.ElementType
+  iconColor: string
+  title: string
+  desc: string
+  metric: string
+  metricColor: string
+}
 
+function QuickCard({ href, icon: Icon, iconColor, title, desc, metric, metricColor }: QuickCardProps) {
   return (
-    <div className="rounded-xl p-6 flex items-center gap-4" style={{ background: h.bg, border: `1px solid ${h.color}20` }}>
-      <div className="w-12 h-12 rounded-lg flex items-center justify-center"
-        style={{ background: `${h.color}15`, border: `1px solid ${h.color}25` }}>
-        <Shield size={22} style={{ color: h.color }} />
-      </div>
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: MUTED }}>
-          Status Operacional
-        </p>
-        {loading ? (
-          <Sk h="24px" w="150px" />
-        ) : (
-          <p className="text-2xl font-bold mt-1" style={{ ...H, color: h.color }}>
-            {h.label}
-          </p>
-        )}
-      </div>
-      <div className="ml-auto text-right">
-        {!loading && score !== null && (
-          <>
-            <p className="text-3xl font-bold tabular-nums" style={{ ...H, color: h.color }}>
-              {score}
-            </p>
-            <p className="text-[9px]" style={{ color: MUTED }}>Score de Saúde</p>
-          </>
-        )}
-      </div>
-    </div>
-  )
-})
-
-// ── Priority Actions ────────────────────────────────────────────────────────
-const PriorityActions = memo(function PriorityActions({ actions, loading }: any) {
-  const LEVEL_COLOR = {
-    critical: { bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.20)', dot: '#ef4444', icon: Flame },
-    warning: { bg: 'rgba(251,191,36,0.08)', border: 'rgba(251,191,36,0.20)', dot: '#fbbf24', icon: AlertTriangle },
-    info: { bg: 'rgba(143,191,194,0.08)', border: 'rgba(143,191,194,0.15)', dot: T, icon: AlertCircle },
-  }
-
-  return (
-    <div className="rounded-xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-      <div className="flex items-center gap-2 mb-4">
-        <AlertTriangle size={16} style={{ color: '#fbbf24' }} />
-        <p className="text-sm font-bold" style={{ ...H, color: '#f3fafa' }}>O que Requer Atenção</p>
-        {!loading && (
-          <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full"
-            style={{ background: 'rgba(251,191,36,0.12)', color: '#fbbf24' }}>
-            {actions.length} item(ns)
-          </span>
-        )}
-      </div>
-
-      {loading ? (
-        <div className="space-y-3">{[...Array(3)].map((_, i) => <Sk key={i} h="48px" r="8px" />)}</div>
-      ) : actions.length === 0 ? (
-        <div className="py-8 text-center">
-          <CheckCircle2 size={28} className="mx-auto mb-2 opacity-30" style={{ color: '#7dd3a8' }} />
-          <p className="text-xs" style={{ color: MUTED }}>Nenhuma ação urgente identificada.</p>
+    <Link href={href} style={{ textDecoration: 'none' }}>
+      <div
+        style={{
+          background: CARD,
+          border: `1px solid ${BORDER}`,
+          borderRadius: 14,
+          padding: 28,
+          transition: 'border-color 0.2s, transform 0.2s',
+          cursor: 'pointer',
+          height: '100%',
+          boxSizing: 'border-box',
+        }}
+        onMouseEnter={e => {
+          const el = e.currentTarget as HTMLElement
+          el.style.borderColor = 'rgba(143,191,194,0.25)'
+          el.style.transform = 'translateY(-2px)'
+        }}
+        onMouseLeave={e => {
+          const el = e.currentTarget as HTMLElement
+          el.style.borderColor = BORDER
+          el.style.transform = 'translateY(0)'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
+          <Icon size={28} style={{ color: iconColor }} />
+          <ChevronRight size={16} style={{ color: 'rgba(143,191,194,0.3)' }} />
         </div>
-      ) : (
-        <div className="space-y-2">
-          {actions.map((a: any, i: number) => {
-            const s = LEVEL_COLOR[a.level as keyof typeof LEVEL_COLOR] || LEVEL_COLOR.info
-            const Icon = s.icon
-            return (
-              <Link key={i} href={a.href}
-                className="flex items-center gap-3 p-3 rounded-lg hover:opacity-80 transition-all"
-                style={{ background: s.bg, border: `1px solid ${s.border}` }}>
-                <Icon size={14} style={{ color: s.dot, flexShrink: 0 }} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold" style={{ color: '#f3fafa' }}>{a.title}</p>
-                  <p className="text-[10px] mt-0.5 truncate" style={{ color: MUTED }}>{a.description}</p>
-                </div>
-                <ChevronRight size={12} style={{ color: s.dot, flexShrink: 0 }} />
-              </Link>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-})
 
-// ── Infrastructure Panel ───────────────────────────────────────────────────
-const InfraPanel = memo(function InfraPanel({ infra, loading }: any) {
-  return (
-    <div className="rounded-xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-      <div className="flex items-center gap-2 mb-4">
-        <Server size={16} style={{ color: '#fbbf24' }} />
-        <p className="text-sm font-bold" style={{ ...H, color: '#f3fafa' }}>Saúde da Infraestrutura</p>
+        <div style={{ ...H, fontSize: 16, fontWeight: 700, color: '#f3fafa', marginBottom: 4 }}>
+          {title}
+        </div>
+        <div style={{ fontSize: 12, color: MUTED, marginBottom: 16 }}>
+          {desc}
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: metricColor }}>
+          {metric}
+        </div>
       </div>
-
-      {loading ? (
-        <div className="space-y-3">{[...Array(2)].map((_, i) => <Sk key={i} h="40px" r="8px" />)}</div>
-      ) : (
-        <div className="space-y-3">
-          {/* Availability */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold" style={{ color: '#f3fafa' }}>Disponibilidade</p>
-              <span className="text-sm font-bold tabular-nums"
-                style={{ color: infra.availability >= 99 ? '#7dd3a8' : infra.availability >= 95 ? '#fbbf24' : '#f87171' }}>
-                {infra.availability}%
-              </span>
-            </div>
-            <div className="h-1.5 rounded-full" style={{ background: BORDER }}>
-              <div className="h-full rounded-full transition-all"
-                style={{
-                  width: `${infra.availability}%`,
-                  background: infra.availability >= 99 ? '#7dd3a8' : infra.availability >= 95 ? '#fbbf24' : '#f87171',
-                }} />
-            </div>
-          </div>
-
-          {/* Hosts */}
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { label: 'Total', value: infra.hostsTotal, color: T },
-              { label: 'Online', value: infra.hostsUp, color: '#7dd3a8' },
-              { label: 'Down', value: infra.hostsDown, color: '#f87171' },
-            ].map(h => (
-              <div key={h.label} className="rounded-lg p-2 text-center"
-                style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${BORDER}` }}>
-                <p className="text-xs font-bold tabular-nums" style={{ color: h.color }}>{h.value}</p>
-                <p className="text-[9px] mt-0.5" style={{ color: MUTED }}>{h.label}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Severity count */}
-          {(infra.criticalProblems > 0 || infra.highProblems > 0) && (
-            <div className="pt-2 border-t" style={{ borderColor: BORDER }}>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px]" style={{ color: MUTED }}>Problemas</span>
-                <div className="flex items-center gap-2">
-                  {infra.criticalProblems > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
-                      🔴 {infra.criticalProblems}
-                    </span>
-                  )}
-                  {infra.highProblems > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(248,113,113,0.15)', color: '#f87171' }}>
-                      🟠 {infra.highProblems}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <Link href="/zabbix" className="mt-2 text-xs flex items-center gap-1 hover:opacity-80"
-            style={{ color: T, fontWeight: 500 }}>
-            Ver Monitoramento <ChevronRight size={11} />
-          </Link>
-        </div>
-      )}
-    </div>
+    </Link>
   )
-})
-
-// ── Source Health ────────────────────────────────────────────────────────────
-const SourceHealth = memo(function SourceHealth({ sources, loading }: any) {
-  return (
-    <div className="rounded-xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-      <p className="text-sm font-bold mb-4" style={{ ...H, color: '#f3fafa' }}>Health por Fonte</p>
-
-      {loading ? (
-        <div className="space-y-3">{[...Array(2)].map((_, i) => <Sk key={i} h="60px" r="8px" />)}</div>
-      ) : (
-        <div className="space-y-3">
-          {Object.entries(sources).map(([source, data]: any) => {
-            const total = data.total || 0
-            const resolved = data.resolved || 0
-            const breached = data.breached || 0
-            const rate = total > 0 ? Math.round((resolved / total) * 100) : 0
-            const color = rate >= 70 ? '#7dd3a8' : rate >= 50 ? '#fbbf24' : '#f87171'
-
-            return (
-              <div key={source}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: source === 'glpi' ? '#a78bfa' : T }}>
-                    {source}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold tabular-nums" style={{ color }}>{rate}%</span>
-                    <span className="text-[10px]" style={{ color: MUTED }}>({resolved}/{total})</span>
-                  </div>
-                </div>
-                <div className="h-1 rounded-full" style={{ background: BORDER }}>
-                  <div className="h-full rounded-full transition-all" style={{ width: `${rate}%`, background: color }} />
-                </div>
-                {breached > 0 && (
-                  <p className="text-[9px] mt-0.5" style={{ color: '#f87171' }}>⚠️ {breached} SLA vencido</p>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-})
-
-// ── Recent Activity ────────────────────────────────────────────────────────
-const RecentActivity = memo(function RecentActivity({ activity, loading }: any) {
-  return (
-    <div className="rounded-xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-sm font-bold" style={{ ...H, color: '#f3fafa' }}>Atividade Recente</p>
-        <Link href="/operacoes" className="text-[10px] flex items-center gap-0.5 hover:opacity-80" style={{ color: T }}>
-          Ver tudo <ChevronRight size={10} />
-        </Link>
-      </div>
-
-      {loading ? (
-        <div className="space-y-2">{[...Array(5)].map((_, i) => <Sk key={i} h="32px" r="6px" />)}</div>
-      ) : activity.length === 0 ? (
-        <p className="text-xs text-center py-4" style={{ color: MUTED }}>Nenhuma atividade recente</p>
-      ) : (
-        <div className="space-y-1">
-          {activity.slice(0, 8).map((a: any, i: number) => (
-            <div key={i} className="flex items-center gap-2 py-2 px-2 rounded hover:bg-white/[0.02] transition-colors">
-              <span className="text-[9px] px-1.5 py-0.5 rounded-full uppercase tracking-wide font-semibold shrink-0"
-                style={{ background: `${a.source === 'GLPI' ? '#a78bfa' : T}15`, color: a.source === 'GLPI' ? '#a78bfa' : T }}>
-                {a.source}
-              </span>
-              <p className="text-[11px] flex-1 truncate" style={{ color: '#f3fafa' }}>{a.title}</p>
-              <p className="text-[10px] shrink-0" style={{ color: MUTED }}>{timeAgo(a.timestamp)}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-})
+}
 
 // ── Main Page ──────────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const now = new Date()
-  const [lastUpdate, setLastUpdate] = useState<Date>(now)
+  const [greeting, setGreeting] = useState('Olá')
+  const [dateStr, setDateStr] = useState('')
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, refetch, dataUpdatedAt } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => fetch('/api/dashboard').then(r => r.json()),
     staleTime: 60_000,
@@ -365,110 +337,264 @@ export default function DashboardPage() {
   })
 
   useEffect(() => {
-    if (data?.timestamp) setLastUpdate(new Date(data.timestamp))
-  }, [data])
+    const now = new Date()
+    setGreeting(getGreeting(now.getHours()))
+    setDateStr(formatFullDate(now))
+  }, [])
 
-  const metrics = data?.metrics || {}
-  const infra = data?.infrastructure || {}
-  const health = data?.health || {}
-  const actions = data?.priorityActions || []
-  const activity = data?.recentActivity || []
-  const sources = data?.sources || {}
+  useEffect(() => {
+    if (dataUpdatedAt) {
+      setLastUpdated(new Date(dataUpdatedAt))
+    }
+  }, [dataUpdatedAt])
+
+  const commercial = data?.commercial ?? {}
+  const metrics = data?.metrics ?? {}
+
+  const kpiCards: KpiCardProps[] = [
+    {
+      label: 'Leads Novos',
+      sublabel: 'no HubSpot',
+      value: commercial.leads,
+      icon: UserPlus,
+      color: '#3b82f6',
+    },
+    {
+      label: 'Clientes Ativos',
+      sublabel: 'cadastrados',
+      value: commercial.customers,
+      icon: Building2,
+      color: '#22c55e',
+    },
+    {
+      label: 'Pipeline',
+      sublabel: 'em negociação',
+      value: commercial.openPipeline != null ? fmtBRL(commercial.openPipeline) : undefined,
+      icon: TrendingUp,
+      color: '#8fbfc2',
+    },
+    {
+      label: 'Tickets Críticos',
+      sublabel: 'SLA vencido',
+      value: metrics.totalBreached ?? 0,
+      icon: AlertTriangle,
+      color: '#ef4444',
+    },
+    {
+      label: 'Projetos',
+      sublabel: 'em andamento',
+      value: '—',
+      icon: Layers,
+      color: '#a78bfa',
+    },
+    {
+      label: 'GMUDs',
+      sublabel: 'pendentes',
+      value: '—',
+      icon: Calendar,
+      color: '#f59e0b',
+    },
+    {
+      label: 'Receita Prevista',
+      sublabel: 'pipeline total',
+      value: commercial.openPipeline != null ? fmtBRL(commercial.openPipeline ?? 0) : undefined,
+      icon: DollarSign,
+      color: '#22c55e',
+    },
+  ]
 
   return (
     <>
       <style>{`
-        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .dash-kpi-grid {
+          display: grid;
+          gap: 16px;
+          grid-template-columns: repeat(2, 1fr);
+        }
+        @media (min-width: 768px) {
+          .dash-kpi-grid {
+            grid-template-columns: repeat(4, 1fr);
+          }
+        }
+        .dash-charts-grid {
+          display: grid;
+          gap: 16px;
+          grid-template-columns: 1fr;
+        }
+        @media (min-width: 768px) {
+          .dash-charts-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+        .dash-quick-grid {
+          display: grid;
+          gap: 16px;
+          grid-template-columns: 1fr;
+        }
+        @media (min-width: 768px) {
+          .dash-quick-grid {
+            grid-template-columns: repeat(3, 1fr);
+          }
+        }
       `}</style>
 
-      <div className="p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
-
-        {/* ── Header ── */}
-        <div className="flex items-center justify-between">
+      <div
+        style={{
+          padding: '40px 32px',
+          maxWidth: 1280,
+          margin: '0 auto',
+          animation: 'fadeInUp 0.4s ease both',
+        }}
+      >
+        {/* ── HEADER ── */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            marginBottom: 32,
+          }}
+        >
           <div>
-            <h1 className="text-3xl font-bold tracking-tight" style={{ ...H, color: '#f3fafa' }}>
-              Executive Command Center
-            </h1>
-            <p className="text-sm mt-1 flex items-center gap-2" style={{ color: MUTED }}>
-              <Clock size={12} /> {formatDate(now)} — {formatTime(now)}
-            </p>
-          </div>
-          <button onClick={() => refetch()} disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all"
-            style={{ background: CARD, border: `1px solid ${BORDER}`, color: MUTED }}
-            onMouseEnter={e => {
-              const el = e.currentTarget as HTMLElement
-              el.style.borderColor = `${T}30`
-              el.style.color = T
-            }}
-            onMouseLeave={e => {
-              const el = e.currentTarget as HTMLElement
-              el.style.borderColor = BORDER
-              el.style.color = MUTED
-            }}>
-            {isLoading ? <RefreshCw size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-            Atualizar
-          </button>
-        </div>
-
-        {/* ── Health Status + Last Update ── */}
-        <HealthBadge score={health.score} loading={isLoading} />
-
-        {/* ── Executive Metrics ── */}
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest mb-3 flex items-center gap-1.5" style={{ color: MUTED }}>
-            <BarChart3 size={10} /> Métricas Operacionais
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <KpiCard label="Total de Chamados" sublabel="GLPI + Jira" value={metrics.totalTickets} icon={AlertTriangle} color={T} loading={isLoading} delay={0} />
-            <KpiCard label="Em Aberto" sublabel="Aguardando resolução" value={metrics.openTickets} icon={Radio} color="#fb923c" loading={isLoading} delay={100} />
-            <KpiCard label="SLA Vencido" sublabel={`${metrics.breachPct ?? 0}% do portfólio`} value={metrics.totalBreached} icon={AlertTriangle} color="#f87171" trend={metrics.totalBreached > 5 ? 'up' : 'down'} loading={isLoading} delay={200} />
-            <KpiCard label="Em Risco" sublabel={`${metrics.atRiskPct ?? 0}% próximo vencimento`} value={metrics.totalAtRisk} icon={AlertCircle} color="#fbbf24" trend={metrics.totalAtRisk > 3 ? 'up' : 'down'} loading={isLoading} delay={300} />
-          </div>
-        </div>
-
-        {/* ── Priority Actions + Infra Side Panel ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2">
-            <PriorityActions actions={actions} loading={isLoading} />
-          </div>
-          <div>
-            <InfraPanel infra={infra} loading={isLoading} />
-          </div>
-        </div>
-
-        {/* ── Source Health + Activity ── */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <SourceHealth sources={sources} loading={isLoading} />
-          <RecentActivity activity={activity} loading={isLoading} />
-        </div>
-
-        {/* ── Resolution Rate ── */}
-        <div className="rounded-xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-sm font-bold" style={{ ...H, color: '#f3fafa' }}>Taxa de Resolução</p>
-              <p className="text-[11px] mt-0.5" style={{ color: MUTED }}>Chamados resolvidos vs. total</p>
+            <div
+              style={{
+                ...H,
+                fontSize: 28,
+                fontWeight: 800,
+                color: '#f3fafa',
+                lineHeight: 1.2,
+              }}
+            >
+              {greeting}, Leonardo
             </div>
-            <p className="text-4xl font-bold tabular-nums" style={{ ...H, color: '#7dd3a8' }}>
-              {metrics.resolutionRate ?? 0}%
-            </p>
-          </div>
-          {isLoading ? (
-            <Sk h="8px" />
-          ) : (
-            <div className="h-2 rounded-full" style={{ background: BORDER }}>
-              <div className="h-full rounded-full transition-all" style={{ width: `${metrics.resolutionRate ?? 0}%`, background: '#7dd3a8' }} />
+            <div
+              style={{
+                fontSize: 13,
+                color: 'rgba(243,250,250,0.45)',
+                marginTop: 6,
+                textTransform: 'capitalize',
+              }}
+            >
+              {dateStr}
             </div>
-          )}
-          {!isLoading && metrics.resolvedToday > 0 && (
-            <p className="text-[10px] mt-3" style={{ color: MUTED }}>
-              🎯 {metrics.resolvedToday} chamados resolvidos hoje
-            </p>
-          )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {lastUpdated && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 11,
+                  color: 'rgba(243,250,250,0.35)',
+                }}
+              >
+                <Clock size={11} />
+                {formatTime(lastUpdated)}
+              </div>
+            )}
+            <button
+              onClick={() => refetch()}
+              disabled={isLoading}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 14px',
+                borderRadius: 8,
+                background: CARD,
+                border: `1px solid ${BORDER}`,
+                color: 'rgba(243,250,250,0.5)',
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: isLoading ? 'not-allowed' : 'pointer',
+                transition: 'border-color 0.2s, color 0.2s',
+              }}
+              onMouseEnter={e => {
+                if (!isLoading) {
+                  const el = e.currentTarget as HTMLElement
+                  el.style.borderColor = 'rgba(143,191,194,0.3)'
+                  el.style.color = T
+                }
+              }}
+              onMouseLeave={e => {
+                const el = e.currentTarget as HTMLElement
+                el.style.borderColor = BORDER
+                el.style.color = 'rgba(243,250,250,0.5)'
+              }}
+            >
+              <RefreshCw
+                size={14}
+                style={{
+                  animation: isLoading ? 'spin 1s linear infinite' : 'none',
+                }}
+              />
+              Atualizar
+            </button>
+          </div>
         </div>
 
+        {/* ── KPI ROW ── */}
+        <div className="dash-kpi-grid" style={{ marginBottom: 32 }}>
+          {kpiCards.map(card => (
+            <KpiCard key={card.label} {...card} loading={isLoading} />
+          ))}
+        </div>
+
+        {/* ── CHARTS ROW ── */}
+        <div className="dash-charts-grid" style={{ marginBottom: 32 }}>
+          <PipelineChart />
+          <StatusPanel
+            openTickets={metrics.openTickets ?? 0}
+            totalBreached={metrics.totalBreached ?? 0}
+            resolvedToday={metrics.resolvedToday ?? 0}
+            loading={isLoading}
+          />
+        </div>
+
+        {/* ── QUICK ACCESS ROW ── */}
+        <div className="dash-quick-grid">
+          <QuickCard
+            href="/crm"
+            icon={Users}
+            iconColor="#8fbfc2"
+            title="CRM"
+            desc="Prospects · Clientes · Atividades"
+            metric={
+              isLoading
+                ? '— contatos'
+                : `${commercial.totalContacts ?? 0} contatos`
+            }
+            metricColor="#8fbfc2"
+          />
+          <QuickCard
+            href="/operacoes"
+            icon={Activity}
+            iconColor="#f59e0b"
+            title="Operações"
+            desc="GLPI · Jira · GMUDs · Agenda"
+            metric={
+              isLoading
+                ? '— tickets abertos'
+                : `${metrics.openTickets ?? 0} tickets abertos`
+            }
+            metricColor="#f59e0b"
+          />
+          <QuickCard
+            href="/automacao"
+            icon={Zap}
+            iconColor="#a78bfa"
+            title="Automação"
+            desc="n8n · Telegram · Relatórios"
+            metric="3 fluxos configurados"
+            metricColor="#a78bfa"
+          />
+        </div>
       </div>
     </>
   )

@@ -67,12 +67,12 @@ export async function POST(request: NextRequest) {
 
     // Audit log
     const sb = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!)
-    await sb.from('audit_log').insert({ action: 'teams_notification_sent', module: 'notifications', description: 'Resumo executivo enviado ao Teams', level: 'info' }).throwOnError().catch(() => {})
+    await sb.from('audit_log').insert({ action: 'teams_notification_sent', module: 'notifications', description: 'Resumo executivo enviado ao Teams', level: 'info' })
 
     return NextResponse.json({ ok: true, sentAt: new Date().toISOString() })
   } catch (e: any) {
     const sb = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!)
-    await sb.from('audit_log').insert({ action: 'teams_notification_failed', module: 'notifications', description: e.message, level: 'error' }).throwOnError().catch(() => {})
+    await sb.from('audit_log').insert({ action: 'teams_notification_failed', module: 'notifications', description: e.message, level: 'error' })
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }

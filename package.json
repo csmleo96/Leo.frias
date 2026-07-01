@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "vault:backup:daily": "npx tsx scripts/vault-backup.ts daily",
+    "vault:backup:weekly": "npx tsx scripts/vault-backup.ts weekly",
+    "vault:backup:monthly": "npx tsx scripts/vault-backup.ts monthly",
+    "vault:cleanup": "npx tsx scripts/vault-cleanup.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

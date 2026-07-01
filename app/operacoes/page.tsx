@@ -1,618 +1,571 @@
 'use client'
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useEffect, useState, useCallback, memo, useRef } from 'react'
-import {
-  AlertTriangle, Clock, ShieldX, UserX, MessageCircle, Truck,
-  CheckCircle2, RefreshCw, Loader2, ExternalLink, Search,
-  Wifi, WifiOff, AlertCircle, ChevronDown, X, Radio, Activity,
-  Zap, Filter,
-} from 'lucide-react'
-import {
-  PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  AreaChart, Area,
-} from 'recharts'
-import { toast } from 'sonner'
-import { Input } from '@/components/ui/input'
-import { createClient } from '@/lib/supabase/client'
+import { useState, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { RefreshCw, ExternalLink, Search, AlertTriangle, CheckCircle2, Clock, Activity, Calendar, FileText } from 'lucide-react'
 
-// ── Constants ──────────────────────────────────────────────────────────────
-const T = '#8fbfc2'
+// ── Design tokens ────────────────────────────────────────────────────────────
+const BG = '#0a1316'
 const CARD = '#0d1a1e'
 const BORDER = 'rgba(143,191,194,0.10)'
-const MUTED = 'rgba(243,250,250,0.45)'
-const H = { fontFamily: 'var(--font-heading), "Space Grotesk", sans-serif' }
-const TOOLTIP = { backgroundColor: '#0d1a1e', border: '1px solid rgba(143,191,194,0.15)', borderRadius: 8, color: '#f3fafa', fontSize: 11 }
+const T = '#8fbfc2'
+const MUTED = 'rgba(243,250,250,0.4)'
+const H: React.CSSProperties = { fontFamily: 'Space Grotesk, sans-serif' }
 
-const SLA_COLOR = { ok: '#7dd3a8', at_risk: '#fbbf24', breached: '#f87171', resolved: '#94a3b8', unknown: '#475569' }
-const SLA_LABEL = { ok: 'OK', at_risk: 'Em Risco', breached: 'Vencido', resolved: 'Resolvido', unknown: '—' }
-
-const PRIORITY_COLOR: Record<number, string> = { 6: '#ef4444', 5: '#f87171', 4: '#fb923c', 3: '#fbbf24', 2: '#94a3b8', 1: '#475569' }
-const GLPI_STATUS_COLOR: Record<number, string> = { 1: '#fbbf24', 2: T, 3: '#a78bfa', 4: '#fb923c', 5: '#7dd3a8', 6: '#94a3b8' }
-
-// ── Types ──────────────────────────────────────────────────────────────────
-interface Ticket {
-  id: string; rawId: string | number; source: 'glpi' | 'jira'
-  title: string; status: string; statusNum: number; statusCategory?: string
-  priority: string; priorityNum: number
-  assignee: string | null; project: string
-  createdAt: string | null; updatedAt: string | null
-  slaHours: number; slaDeadline: string | null; slaStatus: string
-  url: string | null
+// ── GLPI status/priority maps ────────────────────────────────────────────────
+const GLPI_STATUS: Record<number, { label: string; color: string; bg: string }> = {
+  1: { label: 'Novo',           color: '#60a5fa', bg: 'rgba(96,165,250,0.12)' },
+  2: { label: 'Em Atendimento', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
+  3: { label: 'Planejado',      color: '#a78bfa', bg: 'rgba(167,139,250,0.12)' },
+  4: { label: 'Pendente',       color: '#fb923c', bg: 'rgba(251,146,60,0.12)' },
+  5: { label: 'Resolvido',      color: '#22c55e', bg: 'rgba(34,197,94,0.12)' },
+  6: { label: 'Fechado',        color: '#6b7280', bg: 'rgba(107,114,128,0.12)' },
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-function timeAgo(iso: string | null) {
-  if (!iso) return '—'
-  const d = Date.now() - new Date(iso).getTime()
-  const m = Math.floor(d / 60000)
-  if (m < 1) return 'agora'
-  if (m < 60) return `${m}m atrás`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h atrás`
-  return `${Math.floor(h / 24)}d atrás`
+const GLPI_PRIORITY: Record<number, { label: string; color: string }> = {
+  1: { label: 'Muito Baixa', color: '#6b7280' },
+  2: { label: 'Baixa',       color: '#8fbfc2' },
+  3: { label: 'Média',       color: '#f59e0b' },
+  4: { label: 'Alta',        color: '#fb923c' },
+  5: { label: 'Crítico',     color: '#ef4444' },
 }
 
-function slaRemaining(deadline: string | null) {
-  if (!deadline) return null
-  const r = new Date(deadline).getTime() - Date.now()
-  if (r <= 0) return 'Vencido'
-  const h = Math.floor(r / 3600000)
-  if (h < 1) return `${Math.floor(r / 60000)}min`
-  if (h < 24) return `${h}h`
-  return `${Math.floor(h / 24)}d`
+const JIRA_PRIORITY_COLOR: Record<string, string> = {
+  Highest: '#ef4444', High: '#f97316', Medium: '#f59e0b', Low: '#60a5fa', Lowest: '#6b7280',
 }
 
-function groupByDay(tickets: Ticket[], days = 7) {
-  const result: { date: string; glpi: number; jira: number }[] = []
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i)
-    const key = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-    const dayStr = d.toDateString()
-    result.push({
-      date: key,
-      glpi: tickets.filter(t => t.source === 'glpi' && t.createdAt && new Date(t.createdAt).toDateString() === dayStr).length,
-      jira: tickets.filter(t => t.source === 'jira' && t.createdAt && new Date(t.createdAt).toDateString() === dayStr).length,
-    })
-  }
-  return result
+// ── Shared components ────────────────────────────────────────────────────────
+const TH: React.CSSProperties = {
+  fontSize: 10, color: T, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em',
+  padding: '10px 14px', borderBottom: `1px solid ${BORDER}`, textAlign: 'left',
+  whiteSpace: 'nowrap', background: 'rgba(0,0,0,0.15)',
+}
+const TD: React.CSSProperties = {
+  fontSize: 12, color: '#cbd5e1', padding: '10px 14px',
+  borderBottom: `1px solid rgba(143,191,194,0.05)`, verticalAlign: 'middle',
 }
 
-function groupByProject(tickets: Ticket[]) {
-  const counts: Record<string, number> = {}
-  tickets.forEach(t => { counts[t.project] = (counts[t.project] ?? 0) + 1 })
-  return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 8)
+function Badge({ label, color, bg }: { label: string; color: string; bg?: string }) {
+  return (
+    <span style={{ fontSize: 11, fontWeight: 600, color, background: bg ?? `${color}18`, padding: '3px 8px', borderRadius: 6, whiteSpace: 'nowrap' }}>
+      {label}
+    </span>
+  )
 }
 
-// ── Skeleton ───────────────────────────────────────────────────────────────
-const Sk = ({ w = '100%', h = '14px', r = '6px' }: { w?: string; h?: string; r?: string }) => (
-  <div style={{ width: w, height: h, borderRadius: r, background: 'rgba(143,191,194,0.06)', animation: 'shimmer 1.5s infinite', backgroundSize: '200%' }} />
-)
-
-// ── Widget Card ────────────────────────────────────────────────────────────
-const Widget = memo(({ icon: Icon, label, count, color, active, onClick, loading }: {
-  icon: any; label: string; count: number; color: string; active: boolean; onClick: () => void; loading: boolean
-}) => (
-  <button onClick={onClick} className="rounded-xl p-4 text-left transition-all duration-200 w-full"
-    style={{
-      background: active ? `${color}10` : CARD,
-      border: `1px solid ${active ? `${color}35` : BORDER}`,
-      boxShadow: active ? `0 0 20px ${color}0d` : 'none',
-    }}>
-    <div className="flex items-center justify-between mb-2">
-      <div className="w-7 h-7 rounded-lg flex items-center justify-center"
-        style={{ background: `${color}15`, border: `1px solid ${color}25` }}>
-        <Icon size={13} style={{ color }} />
+function KpiCard({ label, value, sub, color, icon: Icon }: { label: string; value: string | number; sub?: string; color: string; icon: any }) {
+  return (
+    <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 8, background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon size={15} style={{ color }} />
+        </div>
+        <span style={{ fontSize: 11, color: T, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
       </div>
-      {active && <div className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />}
+      <div style={{ ...H, fontSize: 32, fontWeight: 800, color: '#f3fafa', lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: MUTED, marginTop: 4 }}>{sub}</div>}
     </div>
-    {loading ? <Sk h="22px" w="40%" /> : (
-      <p className="text-xl font-bold tabular-nums" style={{ ...H, color: active ? color : '#f3fafa' }}>{count}</p>
-    )}
-    <p className="text-[10px] mt-0.5 leading-tight" style={{ color: active ? `${color}cc` : MUTED }}>{label}</p>
-  </button>
-))
-Widget.displayName = 'Widget'
-
-// ── Alert Toast System ─────────────────────────────────────────────────────
-function useAlerts(tickets: Ticket[], prevCountRef: React.MutableRefObject<number>) {
-  useEffect(() => {
-    if (!tickets.length) return
-
-    const breached = tickets.filter(t => t.slaStatus === 'breached')
-    const critical = tickets.filter(t => t.priorityNum >= 5 && t.slaStatus !== 'resolved')
-    const noOwner = critical.filter(t => !t.assignee)
-    const currentTotal = tickets.filter(t => t.slaStatus !== 'resolved').length
-
-    if (breached.length > 0) {
-      toast.error(`${breached.length} SLA vencido${breached.length > 1 ? 's' : ''}`, {
-        description: breached.slice(0, 2).map(t => t.title).join(' · '),
-        duration: 8000,
-      })
-    }
-    if (noOwner.length > 0) {
-      toast.warning(`${noOwner.length} chamado${noOwner.length > 1 ? 's' : ''} crítico${noOwner.length > 1 ? 's' : ''} sem responsável`, {
-        description: 'Recomenda-se triagem imediata',
-        duration: 6000,
-      })
-    }
-    if (prevCountRef.current > 0 && currentTotal > prevCountRef.current + 5) {
-      toast.info(`Backlog aumentou: +${currentTotal - prevCountRef.current} tickets abertos`, { duration: 5000 })
-    }
-    prevCountRef.current = currentTotal
-  }, [tickets, prevCountRef])
+  )
 }
 
-// ── Main Page ──────────────────────────────────────────────────────────────
-const WIDGET_DEFS = [
-  { id: 'critical',       label: 'Chamados Críticos',      icon: AlertTriangle, color: '#f87171' },
-  { id: 'sla_breached',   label: 'SLA Vencido',            icon: ShieldX,       color: '#ef4444' },
-  { id: 'sla_at_risk',    label: 'SLA em Risco',           icon: Clock,         color: '#fbbf24' },
-  { id: 'no_owner',       label: 'Sem Responsável',        icon: UserX,         color: '#fb923c' },
-  { id: 'waiting_client', label: 'Aguardando Cliente',     icon: MessageCircle, color: '#a78bfa' },
-  { id: 'waiting_vendor', label: 'Aguardando Fornecedor',  icon: Truck,         color: '#60a5fa' },
-  { id: 'resolved_today', label: 'Resolvidos Hoje',        icon: CheckCircle2,  color: '#7dd3a8' },
-]
+function TabBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} style={{
+      padding: '8px 20px', borderRadius: 8, fontSize: 13,
+      fontWeight: active ? 600 : 400,
+      border: active ? `1px solid rgba(143,191,194,0.3)` : '1px solid transparent',
+      background: active ? 'rgba(143,191,194,0.12)' : 'transparent',
+      color: active ? T : MUTED, cursor: 'pointer', transition: 'all 0.15s', whiteSpace: 'nowrap',
+    }}>
+      {label}
+    </button>
+  )
+}
 
-const SYNC_INTERVAL_MS = 15 * 60 * 1000
+function FilterBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick} style={{
+      padding: '5px 14px', borderRadius: 20, fontSize: 12,
+      fontWeight: active ? 600 : 400,
+      border: active ? `1px solid rgba(143,191,194,0.3)` : `1px solid ${BORDER}`,
+      background: active ? 'rgba(143,191,194,0.12)' : 'transparent',
+      color: active ? T : MUTED, cursor: 'pointer', transition: 'all 0.15s',
+    }}>
+      {children}
+    </button>
+  )
+}
 
-export default function OperacoesPage() {
-  const qc = useQueryClient()
-  const [activeWidget, setActiveWidget] = useState<string | null>(null)
-  const [filterSource, setFilterSource] = useState<'all' | 'glpi' | 'jira'>('all')
-  const [filterPriority, setFilterPriority] = useState('all')
-  const [filterAssignee, setFilterAssignee] = useState('all')
-  const [filterSla, setFilterSla] = useState('all')
-  const [search, setSearch] = useState('')
-  const [rtConnected, setRtConnected] = useState(false)
-  const [syncing, setSyncing] = useState(false)
-  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
-  const prevCountRef = useRef(0)
+function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: T }} />
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 8, padding: '7px 12px 7px 30px', fontSize: 12, color: '#e2e8f0', outline: 'none', width: 220 }} />
+    </div>
+  )
+}
 
-  // ── Data ──────────────────────────────────────────────────────────────
-  const { data, isLoading, refetch } = useQuery<{ tickets: Ticket[]; lastSync: any }>({
-    queryKey: ['operacoes'],
-    queryFn: () => fetch('/api/operacoes').then(r => r.json()),
-    staleTime: 60_000,
-  })
+function fmtDate(str: string | null | undefined) {
+  if (!str) return '—'
+  return new Date(str).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+}
 
-  const tickets: Ticket[] = data?.tickets ?? []
+function SectionLabel({ label, color }: { label: string; color: string }) {
+  return (
+    <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ width: 3, height: 14, background: color, borderRadius: 2, display: 'inline-block' }} />
+      {label}
+    </div>
+  )
+}
 
-  // ── Sync Mutation ─────────────────────────────────────────────────────
-  const syncMutation = useMutation({
-    mutationFn: () => fetch('/api/operacoes/sync', { method: 'POST' }).then(r => r.json()),
-    onMutate: () => setSyncing(true),
-    onSuccess: (result) => {
-      setSyncing(false)
-      setLastSyncTime(new Date().toISOString())
-      qc.invalidateQueries({ queryKey: ['operacoes'] })
-      toast.success(`Sync concluído — ${result.total ?? 0} tickets`, { duration: 3000 })
-    },
-    onError: () => {
-      setSyncing(false)
-      toast.error('Erro ao sincronizar')
-    },
-  })
+// ── VISÃO EXECUTIVA ──────────────────────────────────────────────────────────
+function ExecutiveView({ glpiData, jiraData }: { glpiData: any; jiraData: any }) {
+  const tickets: any[] = glpiData?.tickets ?? []
+  const issues: any[] = jiraData?.issues ?? []
 
-  // ── Auto-sync every 15 min ────────────────────────────────────────────
-  useEffect(() => {
-    syncMutation.mutate()
-    const t = setInterval(() => syncMutation.mutate(), SYNC_INTERVAL_MS)
-    return () => clearInterval(t)
-  }, []) // eslint-disable-line
+  const glpi = {
+    abertos:   tickets.filter(t => t.status <= 2).length,
+    criticos:  tickets.filter(t => t.priority >= 4 && t.status <= 4).length,
+    pendentes: tickets.filter(t => t.status === 4).length,
+    resolvidos: tickets.filter(t => t.status === 5 || t.status === 6).length,
+  }
 
-  // ── Supabase Realtime ─────────────────────────────────────────────────
-  useEffect(() => {
-    const sb = createClient()
-    const channel = sb.channel('operacoes-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'glpi_tickets' }, () => {
-        qc.invalidateQueries({ queryKey: ['operacoes'] })
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'jira_tickets' }, () => {
-        qc.invalidateQueries({ queryKey: ['operacoes'] })
-      })
-      .subscribe(status => {
-        setRtConnected(status === 'SUBSCRIBED')
-      })
-    return () => { sb.removeChannel(channel) }
-  }, [qc])
-
-  // ── Alerts ────────────────────────────────────────────────────────────
-  useAlerts(tickets, prevCountRef)
-
-  // ── Widget counts ─────────────────────────────────────────────────────
-  const todayStr = new Date().toDateString()
-  const widgetCounts = useMemo(() => {
-    const open = tickets.filter(t => !['resolved', 'resolved_glpi'].includes(t.slaStatus ?? '') && ![5, 6].includes(t.statusNum ?? 0) && t.statusCategory !== 'done')
-    return {
-      critical: tickets.filter(t => t.priorityNum >= 5 && t.slaStatus !== 'resolved').length,
-      sla_breached: tickets.filter(t => t.slaStatus === 'breached').length,
-      sla_at_risk: tickets.filter(t => t.slaStatus === 'at_risk').length,
-      no_owner: open.filter(t => !t.assignee).length,
-      waiting_client: tickets.filter(t => t.statusNum === 4 || t.status?.toLowerCase().includes('waiting') || t.status?.toLowerCase().includes('aguard')).length,
-      waiting_vendor: tickets.filter(t => t.status?.toLowerCase().includes('vendor') || t.status?.toLowerCase().includes('fornecedor') || t.status?.toLowerCase().includes('third')).length,
-      resolved_today: tickets.filter(t => {
-        const isResolved = [5, 6].includes(t.statusNum ?? 0) || t.slaStatus === 'resolved' || t.statusCategory === 'done'
-        return isResolved && t.updatedAt ? new Date(t.updatedAt).toDateString() === todayStr : false
-      }).length,
-    }
-  }, [tickets, todayStr])
-
-  // ── Filter logic ──────────────────────────────────────────────────────
-  const filtered = useMemo(() => {
-    let list = [...tickets]
-
-    // Widget filter
-    if (activeWidget) {
-      const open = list.filter(t => ![5, 6].includes(t.statusNum ?? 0) && t.statusCategory !== 'done' && t.slaStatus !== 'resolved')
-      switch (activeWidget) {
-        case 'critical':       list = list.filter(t => t.priorityNum >= 5 && t.slaStatus !== 'resolved'); break
-        case 'sla_breached':   list = list.filter(t => t.slaStatus === 'breached'); break
-        case 'sla_at_risk':    list = list.filter(t => t.slaStatus === 'at_risk'); break
-        case 'no_owner':       list = open.filter(t => !t.assignee); break
-        case 'waiting_client': list = list.filter(t => t.statusNum === 4 || t.status?.toLowerCase().includes('waiting') || t.status?.toLowerCase().includes('aguard')); break
-        case 'waiting_vendor': list = list.filter(t => t.status?.toLowerCase().includes('vendor') || t.status?.toLowerCase().includes('fornecedor')); break
-        case 'resolved_today': list = list.filter(t => {
-          const isResolved = [5, 6].includes(t.statusNum ?? 0) || t.slaStatus === 'resolved' || t.statusCategory === 'done'
-          return isResolved && t.updatedAt ? new Date(t.updatedAt).toDateString() === todayStr : false
-        }); break
-      }
-    }
-
-    if (filterSource !== 'all') list = list.filter(t => t.source === filterSource)
-    if (filterPriority !== 'all') list = list.filter(t => t.priority === filterPriority)
-    if (filterAssignee !== 'all') list = list.filter(t => (t.assignee ?? '—') === filterAssignee)
-    if (filterSla !== 'all') list = list.filter(t => t.slaStatus === filterSla)
-    if (search) {
-      const q = search.toLowerCase()
-      list = list.filter(t => t.title.toLowerCase().includes(q) || String(t.rawId).includes(q) || t.project.toLowerCase().includes(q))
-    }
-
-    return list
-  }, [tickets, activeWidget, filterSource, filterPriority, filterAssignee, filterSla, search, todayStr])
-
-  // ── Chart data ────────────────────────────────────────────────────────
-  const chartData = useMemo(() => ({
-    slaDonut: [
-      { name: 'OK', value: tickets.filter(t => t.slaStatus === 'ok').length, color: '#7dd3a8' },
-      { name: 'Em Risco', value: tickets.filter(t => t.slaStatus === 'at_risk').length, color: '#fbbf24' },
-      { name: 'Vencido', value: tickets.filter(t => t.slaStatus === 'breached').length, color: '#f87171' },
-      { name: 'Resolvido', value: tickets.filter(t => t.slaStatus === 'resolved').length, color: '#475569' },
-    ].filter(d => d.value > 0),
-    backlogDonut: [
-      { name: 'GLPI', value: tickets.filter(t => t.source === 'glpi').length, color: '#f472b6' },
-      { name: 'Jira', value: tickets.filter(t => t.source === 'jira').length, color: T },
-    ],
-    daily: groupByDay(tickets, 7),
-    byProject: groupByProject(tickets),
-  }), [tickets])
-
-  // ── Unique filter values ──────────────────────────────────────────────
-  const priorities = useMemo(() => [...new Set(tickets.map(t => t.priority).filter(Boolean))], [tickets])
-  const assignees = useMemo(() => [...new Set(tickets.map(t => t.assignee).filter(Boolean) as string[])].sort(), [tickets])
-
-  const resetFilters = useCallback(() => {
-    setActiveWidget(null); setFilterSource('all'); setFilterPriority('all')
-    setFilterAssignee('all'); setFilterSla('all'); setSearch('')
-  }, [])
-
-  const hasFilters = activeWidget || filterSource !== 'all' || filterPriority !== 'all' || filterAssignee !== 'all' || filterSla !== 'all' || search
+  const jira = {
+    ativos:     issues.filter(i => i.statusCategory !== 'done').length,
+    risco:      issues.filter(i => i.daysRemaining !== null && i.daysRemaining < 0).length,
+    semana:     issues.filter(i => i.daysRemaining !== null && i.daysRemaining >= 0 && i.daysRemaining <= 7).length,
+    concluidos: issues.filter(i => i.statusCategory === 'done').length,
+  }
 
   return (
-    <>
-      <style>{`
-        @keyframes shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
-        @keyframes fadeIn  { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
-        @keyframes pulse2  { 0%,100% { opacity:1 } 50% { opacity:.3 } }
-        .fade-in { animation: fadeIn .4s ease both }
-      `}</style>
-
-      <div className="p-6 space-y-5 max-w-[1600px]">
-
-        {/* ── Header ── */}
-        <div className="flex items-center justify-between fade-in">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-2 h-2 rounded-full" style={{ background: '#f472b6', animation: 'pulse2 2s infinite' }} />
-              <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: MUTED }}>
-                Torre de Operações
-              </span>
-            </div>
-            <h1 className="text-2xl font-bold" style={{ ...H, color: '#f3fafa' }}>Controle Operacional</h1>
-            <div className="flex items-center gap-3 mt-1">
-              <span className="text-xs" style={{ color: MUTED }}>
-                {tickets.length} tickets · {filtered.length} exibidos
-              </span>
-              {(data?.lastSync || lastSyncTime) && (
-                <span className="text-[10px] flex items-center gap-1" style={{ color: MUTED }}>
-                  <Clock size={9} /> Sync {timeAgo(lastSyncTime ?? data?.lastSync?.synced_at)}
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Realtime indicator */}
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium"
-              style={{ background: rtConnected ? 'rgba(125,211,168,0.10)' : 'rgba(248,113,113,0.10)', color: rtConnected ? '#7dd3a8' : '#f87171', border: `1px solid ${rtConnected ? 'rgba(125,211,168,0.20)' : 'rgba(248,113,113,0.20)'}` }}>
-              {rtConnected ? <Wifi size={11} /> : <WifiOff size={11} />}
-              {rtConnected ? 'Realtime' : 'Offline'}
-            </div>
-
-            <button onClick={() => syncMutation.mutate()} disabled={syncing}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
-              style={{ background: CARD, color: T, border: `1px solid rgba(143,191,194,0.20)` }}>
-              {syncing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-              {syncing ? 'Sincronizando...' : 'Sincronizar'}
-            </button>
-          </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+      <div>
+        <SectionLabel label="GLPI — Gestão de Tickets" color="#a78bfa" />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+          <KpiCard label="Abertos"    value={glpi.abertos}   sub="aguardando atendimento"  color="#f59e0b" icon={Clock} />
+          <KpiCard label="Críticos"   value={glpi.criticos}  sub="prioridade alta / crítica" color="#ef4444" icon={AlertTriangle} />
+          <KpiCard label="Pendentes"  value={glpi.pendentes} sub="aguardando cliente"       color="#fb923c" icon={AlertTriangle} />
+          <KpiCard label="Resolvidos" value={glpi.resolvidos} sub="fechados ou resolvidos"  color="#22c55e" icon={CheckCircle2} />
         </div>
+      </div>
 
-        {/* ── 7 Widgets ── */}
-        <div className="grid grid-cols-4 lg:grid-cols-7 gap-2.5 fade-in" style={{ animationDelay: '60ms' }}>
-          {WIDGET_DEFS.map(w => (
-            <Widget
-              key={w.id}
-              icon={w.icon}
-              label={w.label}
-              count={widgetCounts[w.id as keyof typeof widgetCounts] ?? 0}
-              color={w.color}
-              active={activeWidget === w.id}
-              onClick={() => setActiveWidget(prev => prev === w.id ? null : w.id)}
-              loading={isLoading}
-            />
+      <div>
+        <SectionLabel label="Jira — Gestão de Projetos" color="#60a5fa" />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+          <KpiCard label="Em Andamento" value={jira.ativos}     sub="issues ativas"          color="#60a5fa" icon={Activity} />
+          <KpiCard label="Em Risco"     value={jira.risco}      sub="prazo vencido"          color="#ef4444" icon={AlertTriangle} />
+          <KpiCard label="Esta Semana"  value={jira.semana}     sub="vencimentos próximos"   color="#f59e0b" icon={Calendar} />
+          <KpiCard label="Concluídos"   value={jira.concluidos} sub="no período"             color="#22c55e" icon={CheckCircle2} />
+        </div>
+      </div>
+
+      <div>
+        <SectionLabel label="GMUDs — Gestão de Mudanças" color="#22c55e" />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+          <KpiCard label="Planejadas"   value="—" sub="aguardando aprovação"  color={T}        icon={FileText} />
+          <KpiCard label="Aprovadas"    value="—" sub="prontas para execução" color="#22c55e"  icon={CheckCircle2} />
+          <KpiCard label="Em Execução"  value="—" sub="em andamento agora"   color="#f59e0b"  icon={Activity} />
+          <KpiCard label="Concluídas"   value="—" sub="este mês"             color="#6b7280"  icon={CheckCircle2} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── GLPI ─────────────────────────────────────────────────────────────────────
+function GLPIView({ data, loading }: { data: any; loading: boolean }) {
+  const [filter, setFilter] = useState('todos')
+  const [search, setSearch] = useState('')
+
+  const tickets: any[] = data?.tickets ?? []
+
+  const filtered = useMemo(() => {
+    let list = tickets
+    if (filter === 'abertos')    list = list.filter(t => t.status <= 2)
+    if (filter === 'criticos')   list = list.filter(t => t.priority >= 4)
+    if (filter === 'pendentes')  list = list.filter(t => t.status === 4)
+    if (filter === 'resolvidos') list = list.filter(t => t.status === 5 || t.status === 6)
+    if (search) list = list.filter(t => (t.title ?? '').toLowerCase().includes(search.toLowerCase()) || String(t.id).includes(search))
+    return list
+  }, [tickets, filter, search])
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {([['todos','Todos'], ['abertos','Abertos'], ['criticos','Críticos'], ['pendentes','Pendentes'], ['resolvidos','Resolvidos']] as [string,string][]).map(([id, label]) => (
+            <FilterBtn key={id} active={filter === id} onClick={() => setFilter(id)}>{label}</FilterBtn>
           ))}
         </div>
-
-        {/* ── Filter Bar ── */}
-        <div className="flex flex-wrap items-center gap-2 fade-in" style={{ animationDelay: '120ms' }}>
-          <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: MUTED }}>
-            <Filter size={10} /> Filtros
-          </div>
-
-          {/* Source */}
-          {(['all', 'glpi', 'jira'] as const).map(s => (
-            <button key={s} onClick={() => setFilterSource(s)}
-              className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-              style={filterSource === s
-                ? { background: 'rgba(143,191,194,0.15)', color: T, border: `1px solid rgba(143,191,194,0.30)` }
-                : { background: CARD, color: MUTED, border: `1px solid ${BORDER}` }}>
-              {s === 'all' ? 'Todos' : s.toUpperCase()}
-            </button>
-          ))}
-
-          <div className="w-px h-4" style={{ background: BORDER }} />
-
-          {/* Priority */}
-          <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)}
-            className="px-2.5 py-1 rounded-lg text-xs outline-none"
-            style={{ background: filterPriority !== 'all' ? 'rgba(143,191,194,0.10)' : CARD, color: filterPriority !== 'all' ? T : MUTED, border: `1px solid ${filterPriority !== 'all' ? 'rgba(143,191,194,0.25)' : BORDER}` }}>
-            <option value="all">Prioridade</option>
-            {priorities.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
-
-          {/* Assignee */}
-          <select value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}
-            className="px-2.5 py-1 rounded-lg text-xs outline-none max-w-[160px]"
-            style={{ background: filterAssignee !== 'all' ? 'rgba(143,191,194,0.10)' : CARD, color: filterAssignee !== 'all' ? T : MUTED, border: `1px solid ${filterAssignee !== 'all' ? 'rgba(143,191,194,0.25)' : BORDER}` }}>
-            <option value="all">Responsável</option>
-            <option value="—">Sem responsável</option>
-            {assignees.map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
-
-          {/* SLA Status */}
-          <select value={filterSla} onChange={e => setFilterSla(e.target.value)}
-            className="px-2.5 py-1 rounded-lg text-xs outline-none"
-            style={{ background: filterSla !== 'all' ? 'rgba(143,191,194,0.10)' : CARD, color: filterSla !== 'all' ? T : MUTED, border: `1px solid ${filterSla !== 'all' ? 'rgba(143,191,194,0.25)' : BORDER}` }}>
-            <option value="all">SLA</option>
-            <option value="ok">OK</option>
-            <option value="at_risk">Em Risco</option>
-            <option value="breached">Vencido</option>
-            <option value="resolved">Resolvido</option>
-          </select>
-
-          {/* Search */}
-          <div className="relative">
-            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: MUTED }} />
-            <Input
-              className="pl-7 h-7 text-xs w-52"
-              placeholder="Buscar ticket, projeto..."
-              value={search} onChange={e => setSearch(e.target.value)}
-            />
-          </div>
-
-          {hasFilters && (
-            <button onClick={resetFilters}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs"
-              style={{ background: 'rgba(248,113,113,0.10)', color: '#f87171', border: '1px solid rgba(248,113,113,0.20)' }}>
-              <X size={10} /> Limpar
-            </button>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <SearchInput value={search} onChange={setSearch} placeholder="Buscar ticket..." />
+          <span style={{ fontSize: 12, color: MUTED }}>{filtered.length} tickets</span>
         </div>
+      </div>
 
-        {/* ── Charts Row ── */}
-        {!isLoading && tickets.length > 0 && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 fade-in" style={{ animationDelay: '180ms' }}>
-
-            {/* SLA Donut */}
-            <div className="rounded-xl p-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <p className="text-xs font-semibold mb-3" style={{ ...H, color: '#f3fafa' }}>SLA Performance</p>
-              <ResponsiveContainer width="100%" height={160}>
-                <PieChart>
-                  <Pie data={chartData.slaDonut} cx="50%" cy="50%" innerRadius={45} outerRadius={68} dataKey="value" paddingAngle={3}>
-                    {chartData.slaDonut.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                  </Pie>
-                  <Tooltip contentStyle={TOOLTIP} />
-                  <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: 10, color: MUTED }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Backlog Source */}
-            <div className="rounded-xl p-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <p className="text-xs font-semibold mb-3" style={{ ...H, color: '#f3fafa' }}>Backlog por Origem</p>
-              <ResponsiveContainer width="100%" height={160}>
-                <PieChart>
-                  <Pie data={chartData.backlogDonut} cx="50%" cy="50%" innerRadius={45} outerRadius={68} dataKey="value" paddingAngle={3}>
-                    {chartData.backlogDonut.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                  </Pie>
-                  <Tooltip contentStyle={TOOLTIP} />
-                  <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: 10, color: MUTED }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Daily evolution */}
-            <div className="rounded-xl p-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <p className="text-xs font-semibold mb-3" style={{ ...H, color: '#f3fafa' }}>Novos por Dia (7d)</p>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={chartData.daily} barSize={8}>
-                  <XAxis dataKey="date" tick={{ fill: MUTED, fontSize: 9 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: MUTED, fontSize: 9 }} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={TOOLTIP} />
-                  <Bar dataKey="glpi" fill="#f472b6" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="jira" fill={T} radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* By project */}
-            <div className="rounded-xl p-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <p className="text-xs font-semibold mb-3" style={{ ...H, color: '#f3fafa' }}>Por Projeto</p>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={chartData.byProject} layout="vertical" barSize={8}>
-                  <XAxis type="number" tick={{ fill: MUTED, fontSize: 9 }} axisLine={false} tickLine={false} />
-                  <YAxis type="category" dataKey="name" tick={{ fill: MUTED, fontSize: 9 }} axisLine={false} tickLine={false} width={55} />
-                  <Tooltip contentStyle={TOOLTIP} />
-                  <Bar dataKey="value" fill="#a78bfa" radius={3} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-
+      <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, overflow: 'hidden' }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: T, fontSize: 13 }}>Carregando tickets...</div>
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: 40, textAlign: 'center', color: MUTED, fontSize: 13 }}>Nenhum ticket encontrado</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  {['#', 'Título', 'Categoria', 'Prioridade', 'Status', 'Responsável', 'Abertura', 'SLA'].map(h => (
+                    <th key={h} style={TH}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((t: any) => {
+                  const st = GLPI_STATUS[t.status] ?? { label: t.statusLabel ?? `Status ${t.status}`, color: '#6b7280', bg: 'rgba(107,114,128,0.12)' }
+                  const pr = GLPI_PRIORITY[t.priority] ?? { label: String(t.priority), color: '#6b7280' }
+                  const daysOpen = t.daysOpen ?? 0
+                  const slaColor = t.status <= 2 && daysOpen > 3 ? '#ef4444' : t.status <= 2 && daysOpen > 1 ? '#f59e0b' : '#22c55e'
+                  return (
+                    <tr key={t.id}
+                      onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(255,255,255,0.02)' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = 'transparent' }}
+                      style={{ transition: 'background 0.1s' }}>
+                      <td style={{ ...TD, color: T, fontWeight: 600, fontSize: 11 }}>#{t.id}</td>
+                      <td style={{ ...TD, maxWidth: 280 }}>
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#e2e8f0', fontWeight: 500 }} title={t.title}>{t.title}</div>
+                        <div style={{ fontSize: 10, color: MUTED, marginTop: 1 }}>{t.typeLabel ?? ''}</div>
+                      </td>
+                      <td style={{ ...TD, fontSize: 11, color: MUTED }}>{t.category || '—'}</td>
+                      <td style={TD}><Badge label={pr.label} color={pr.color} /></td>
+                      <td style={TD}><Badge label={st.label} color={st.color} bg={st.bg} /></td>
+                      <td style={{ ...TD, fontSize: 11 }}>{t.assignee ?? <span style={{ color: MUTED }}>Não atribuído</span>}</td>
+                      <td style={{ ...TD, fontSize: 11, color: MUTED, whiteSpace: 'nowrap' }}>{fmtDate(t.dateCreation)}</td>
+                      <td style={TD}>
+                        {t.status <= 2
+                          ? <span style={{ fontSize: 11, fontWeight: 600, color: slaColor }}>{daysOpen === 0 ? 'Hoje' : `${daysOpen}d`}</span>
+                          : <span style={{ fontSize: 11, color: MUTED }}>—</span>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
 
-        {/* ── Ticket Table ── */}
-        <div className="rounded-xl overflow-hidden fade-in" style={{ background: CARD, border: `1px solid ${BORDER}`, animationDelay: '240ms' }}>
-          <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: BORDER }}>
-            <p className="text-sm font-semibold" style={{ ...H, color: '#f3fafa' }}>
-              {filtered.length} ticket{filtered.length !== 1 ? 's' : ''}
-              {activeWidget && <span className="ml-2 text-xs font-normal" style={{ color: MUTED }}>— {WIDGET_DEFS.find(w => w.id === activeWidget)?.label}</span>}
-            </p>
-            {isLoading && <Loader2 size={14} className="animate-spin" style={{ color: T }} />}
+// ── JIRA ──────────────────────────────────────────────────────────────────────
+function JiraView({ data, loading }: { data: any; loading: boolean }) {
+  const [view, setView] = useState<'table' | 'kanban'>('table')
+  const [search, setSearch] = useState('')
+  const [projectFilter, setProjectFilter] = useState('todos')
+
+  const issues: any[] = data?.issues ?? []
+
+  const projects = useMemo(() => {
+    const map: Record<string, string> = {}
+    issues.forEach((i: any) => { if (i.project?.key) map[i.project.key] = i.project.name })
+    return Object.entries(map).map(([key, name]) => ({ key, name }))
+  }, [issues])
+
+  const filtered = useMemo(() => {
+    let list = issues
+    if (projectFilter !== 'todos') list = list.filter((i: any) => i.project?.key === projectFilter)
+    if (search) list = list.filter((i: any) =>
+      (i.summary ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (i.key ?? '').toLowerCase().includes(search.toLowerCase())
+    )
+    return list
+  }, [issues, projectFilter, search])
+
+  const kanban = useMemo(() => ({
+    todo:       filtered.filter((i: any) => i.statusCategory === 'new'),
+    inProgress: filtered.filter((i: any) => i.statusCategory === 'indeterminate'),
+    done:       filtered.filter((i: any) => i.statusCategory === 'done'),
+  }), [filtered])
+
+  function JiraCard({ issue }: { issue: any }) {
+    const prColor = JIRA_PRIORITY_COLOR[issue.priority] ?? '#6b7280'
+    const isOverdue = issue.daysRemaining !== null && issue.daysRemaining < 0
+    const isDueSoon = issue.daysRemaining !== null && issue.daysRemaining >= 0 && issue.daysRemaining <= 3
+    return (
+      <div style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid ${BORDER}`, borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, marginBottom: 6 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: T }}>{issue.key}</span>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: prColor, flexShrink: 0, marginTop: 2 }} />
+        </div>
+        <p style={{ fontSize: 12, color: '#e2e8f0', margin: '0 0 6px', lineHeight: 1.4, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2 } as any}>{issue.summary}</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 10, color: MUTED }}>{(issue.assignee ?? '').split(' ')[0] || '—'}</span>
+          {issue.daysRemaining !== null && (
+            <span style={{ fontSize: 10, fontWeight: 600, color: isOverdue ? '#ef4444' : isDueSoon ? '#f59e0b' : MUTED }}>
+              {isOverdue ? `${Math.abs(issue.daysRemaining)}d atraso` : `${issue.daysRemaining}d`}
+            </span>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)}
+            style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 8, padding: '6px 10px', color: '#e2e8f0', fontSize: 12, cursor: 'pointer' }}>
+            <option value="todos">Todos os projetos</option>
+            {projects.map(p => <option key={p.key} value={p.key}>{p.name}</option>)}
+          </select>
+          <div style={{ display: 'flex', border: `1px solid ${BORDER}`, borderRadius: 8, overflow: 'hidden' }}>
+            {(['table', 'kanban'] as const).map(v => (
+              <button key={v} onClick={() => setView(v)}
+                style={{ padding: '6px 14px', fontSize: 12, fontWeight: view === v ? 600 : 400, background: view === v ? 'rgba(143,191,194,0.15)' : 'transparent', color: view === v ? T : MUTED, border: 'none', cursor: 'pointer' }}>
+                {v === 'table' ? 'Tabela' : 'Kanban'}
+              </button>
+            ))}
           </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <SearchInput value={search} onChange={setSearch} placeholder="Buscar issue..." />
+          <span style={{ fontSize: 12, color: MUTED }}>{filtered.length} issues</span>
+        </div>
+      </div>
 
-          {isLoading ? (
-            <div className="p-5 space-y-3">
-              {[...Array(6)].map((_, i) => (
-                <div key={i} className="flex items-center gap-4">
-                  <Sk w="60px" h="20px" r="8px" />
-                  <Sk h="12px" w="50%" />
-                  <Sk h="12px" w="80px" />
-                  <Sk h="12px" w="60px" />
+      {loading ? (
+        <div style={{ padding: 40, textAlign: 'center', color: T, fontSize: 13 }}>Carregando projetos...</div>
+      ) : view === 'table' ? (
+        <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>{['Chave', 'Título', 'Projeto', 'Status', 'Prioridade', 'Responsável', 'Sprint', 'Prazo'].map(h => <th key={h} style={TH}>{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {filtered.map((i: any) => {
+                  const catColor = i.statusCategory === 'done' ? '#22c55e' : i.statusCategory === 'indeterminate' ? '#f59e0b' : '#60a5fa'
+                  const prColor = JIRA_PRIORITY_COLOR[i.priority] ?? '#6b7280'
+                  const isOverdue = i.daysRemaining !== null && i.daysRemaining < 0
+                  return (
+                    <tr key={i.key}
+                      onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(255,255,255,0.02)' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = 'transparent' }}
+                      style={{ transition: 'background 0.1s' }}>
+                      <td style={{ ...TD, whiteSpace: 'nowrap' }}>
+                        <a href={i.url} target="_blank" rel="noreferrer" style={{ color: T, fontWeight: 700, fontSize: 11, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {i.key} <ExternalLink size={10} />
+                        </a>
+                      </td>
+                      <td style={{ ...TD, maxWidth: 280 }}>
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#e2e8f0', fontWeight: 500 }} title={i.summary}>{i.summary}</div>
+                        <div style={{ fontSize: 10, color: MUTED, marginTop: 1 }}>{i.type}</div>
+                      </td>
+                      <td style={{ ...TD, fontSize: 11, color: MUTED }}>{i.project?.name ?? '—'}</td>
+                      <td style={TD}><Badge label={i.status} color={catColor} /></td>
+                      <td style={TD}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: prColor, flexShrink: 0 }} />
+                          <span style={{ fontSize: 11, color: MUTED }}>{i.priority}</span>
+                        </span>
+                      </td>
+                      <td style={{ ...TD, fontSize: 11 }}>{i.assignee ?? <span style={{ color: MUTED }}>—</span>}</td>
+                      <td style={{ ...TD, fontSize: 11, color: MUTED }}>{i.sprint?.name ?? '—'}</td>
+                      <td style={TD}>
+                        {i.daysRemaining !== null
+                          ? <span style={{ fontSize: 11, fontWeight: 600, color: isOverdue ? '#ef4444' : i.daysRemaining <= 3 ? '#f59e0b' : '#22c55e' }}>
+                              {isOverdue ? `${Math.abs(i.daysRemaining)}d atraso` : `${i.daysRemaining}d`}
+                            </span>
+                          : <span style={{ fontSize: 11, color: MUTED }}>—</span>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+          {[
+            { key: 'todo',       label: 'A Fazer',      color: '#60a5fa', items: kanban.todo },
+            { key: 'inProgress', label: 'Em Andamento', color: '#f59e0b', items: kanban.inProgress },
+            { key: 'done',       label: 'Concluído',    color: '#22c55e', items: kanban.done },
+          ].map(col => (
+            <div key={col.key} style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, borderTop: `3px solid ${col.color}` }}>
+              <div style={{ padding: '12px 14px', borderBottom: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: col.color, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{col.label}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, background: `${col.color}18`, color: col.color, padding: '2px 8px', borderRadius: 10 }}>{col.items.length}</span>
+              </div>
+              <div style={{ padding: 10, maxHeight: 520, overflowY: 'auto' }}>
+                {col.items.length === 0
+                  ? <p style={{ fontSize: 11, color: MUTED, textAlign: 'center', padding: '20px 0' }}>Nenhuma issue</p>
+                  : col.items.map((i: any) => <JiraCard key={i.key} issue={i} />)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── GMUDs ────────────────────────────────────────────────────────────────────
+const GMUD_SAMPLE = [
+  { id: 'GMUD-001', cliente: 'AVHealth',  desc: 'Atualização do servidor de autenticação',    janela: '22/06 02:00–04:00', status: 'Planejada',  responsavel: 'Jefferson Pelizari' },
+  { id: 'GMUD-002', cliente: 'Geodis',    desc: 'Migração de banco de dados PostgreSQL 14→16', janela: '25/06 01:00–03:00', status: 'Aprovada',   responsavel: 'Leo Frias' },
+  { id: 'GMUD-003', cliente: 'XTENT',     desc: 'Deploy microserviços v2.4.1',                janela: '28/06 00:00–02:00', status: 'Planejada',  responsavel: 'Jefferson Pelizari' },
+]
+
+const GMUD_STATUS: Record<string, { color: string; bg: string }> = {
+  'Planejada':   { color: '#60a5fa', bg: 'rgba(96,165,250,0.12)' },
+  'Aprovada':    { color: '#22c55e', bg: 'rgba(34,197,94,0.12)' },
+  'Em execução': { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
+  'Concluída':   { color: '#6b7280', bg: 'rgba(107,114,128,0.12)' },
+}
+
+function GMUDView() {
+  const [filter, setFilter] = useState('todos')
+  const filtered = filter === 'todos' ? GMUD_SAMPLE : GMUD_SAMPLE.filter(g => g.status === filter)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {(['todos', 'Planejada', 'Aprovada', 'Em execução', 'Concluída']).map(f => (
+          <FilterBtn key={f} active={filter === f} onClick={() => setFilter(f)}>{f === 'todos' ? 'Todas' : f}</FilterBtn>
+        ))}
+      </div>
+
+      <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>{['GMUD', 'Cliente', 'Descrição', 'Janela', 'Status', 'Responsável'].map(h => <th key={h} style={TH}>{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr><td colSpan={6} style={{ ...TD, textAlign: 'center', color: MUTED, padding: 32 }}>Nenhuma GMUD encontrada</td></tr>
+            ) : filtered.map(g => {
+              const st = GMUD_STATUS[g.status] ?? { color: '#6b7280', bg: 'rgba(107,114,128,0.12)' }
+              return (
+                <tr key={g.id}
+                  onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(255,255,255,0.02)' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = 'transparent' }}
+                  style={{ transition: 'background 0.1s' }}>
+                  <td style={{ ...TD, fontWeight: 700, color: T, fontSize: 11 }}>{g.id}</td>
+                  <td style={{ ...TD, fontWeight: 600, color: '#e2e8f0' }}>{g.cliente}</td>
+                  <td style={{ ...TD, maxWidth: 280 }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{g.desc}</span>
+                  </td>
+                  <td style={{ ...TD, fontSize: 11, color: MUTED, whiteSpace: 'nowrap' }}>{g.janela}</td>
+                  <td style={TD}><Badge label={g.status} color={st.color} bg={st.bg} /></td>
+                  <td style={{ ...TD, fontSize: 11 }}>{g.responsavel}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ background: 'rgba(143,191,194,0.04)', border: `1px solid rgba(143,191,194,0.1)`, borderRadius: 10, padding: '12px 16px', fontSize: 12, color: MUTED }}>
+        GMUDs serão integradas automaticamente via n8n quando configurado. Dados acima são demonstrativos.
+      </div>
+    </div>
+  )
+}
+
+// ── AGENDA ───────────────────────────────────────────────────────────────────
+const AGENDA_DAYS = [
+  { day: 'Seg 23', items: [{ time: '09:00', title: 'Daily de Projetos', type: 'Reunião', color: '#60a5fa' }, { time: '14:00', title: 'Review Sprint MSP-Infra', type: 'Jira', color: '#a78bfa' }] },
+  { day: 'Ter 24', items: [{ time: '10:00', title: 'Apresentação AVHealth', type: 'CRM', color: '#22c55e' }, { time: '15:00', title: 'Review Neural Lens', type: 'Projeto', color: '#f59e0b' }] },
+  { day: 'Qua 25', items: [{ time: '01:00', title: 'GMUD-002 — Geodis DB', type: 'GMUD', color: '#ef4444' }, { time: '11:00', title: 'Planejamento Q3', type: 'Reunião', color: '#60a5fa' }] },
+  { day: 'Qui 26', items: [{ time: '09:00', title: 'Daily de Projetos', type: 'Reunião', color: '#60a5fa' }] },
+  { day: 'Sex 27', items: [{ time: '16:00', title: 'Relatório Semanal', type: 'Relatório', color: T }] },
+]
+
+function AgendaView() {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ fontSize: 12, color: MUTED, background: 'rgba(143,191,194,0.04)', border: `1px solid rgba(143,191,194,0.1)`, borderRadius: 8, padding: '10px 14px' }}>
+        Integração com Google Calendar / Microsoft 365 disponível em breve. Agenda atual é demonstrativa.
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+        {AGENDA_DAYS.map(day => (
+          <div key={day.day} style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, overflow: 'hidden' }}>
+            <div style={{ padding: '10px 14px', borderBottom: `1px solid ${BORDER}`, background: 'rgba(0,0,0,0.15)' }}>
+              <span style={{ ...H, fontSize: 13, fontWeight: 700, color: '#e2e8f0' }}>{day.day}</span>
+            </div>
+            <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {day.items.map((item, i) => (
+                <div key={i} style={{ borderLeft: `3px solid ${item.color}`, paddingLeft: 10, paddingTop: 4, paddingBottom: 4 }}>
+                  <div style={{ fontSize: 10, color: MUTED }}>{item.time}</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0', marginTop: 2, lineHeight: 1.3 }}>{item.title}</div>
+                  <div style={{ fontSize: 10, color: item.color, marginTop: 2 }}>{item.type}</div>
                 </div>
               ))}
             </div>
-          ) : filtered.length === 0 ? (
-            <div className="py-14 text-center">
-              <p className="text-sm" style={{ color: MUTED }}>
-                {tickets.length === 0 ? 'Clique em "Sincronizar" para carregar os tickets' : 'Nenhum ticket corresponde aos filtros'}
-              </p>
-              {tickets.length === 0 && (
-                <button onClick={() => syncMutation.mutate()} disabled={syncing}
-                  className="mt-3 flex items-center gap-2 mx-auto px-4 py-2 rounded-lg text-sm font-medium"
-                  style={{ background: T, color: '#0a1316' }}>
-                  {syncing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-                  Sincronizar agora
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead style={{ borderBottom: `1px solid ${BORDER}` }}>
-                  <tr>
-                    {['Fonte', '#', 'Título', 'Status', 'Prioridade', 'Responsável', 'Projeto', 'SLA', 'Restante', 'Atualizado', ''].map(h => (
-                      <th key={h} className="px-3 py-2.5 text-left text-[9px] font-semibold uppercase tracking-wider"
-                        style={{ color: 'rgba(243,250,250,0.3)' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.slice(0, 100).map((t, i) => {
-                    const slaColor = SLA_COLOR[t.slaStatus as keyof typeof SLA_COLOR] ?? MUTED
-                    const priorityColor = PRIORITY_COLOR[t.priorityNum] ?? '#94a3b8'
-                    const statusColor = t.source === 'glpi' ? (GLPI_STATUS_COLOR[t.statusNum] ?? MUTED) : T
-                    return (
-                      <tr key={t.id} className="hover:bg-white/[0.015] transition-colors"
-                        style={{ borderTop: i > 0 ? `1px solid rgba(143,191,194,0.04)` : 'none' }}>
-                        <td className="px-3 py-2.5">
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
-                            style={t.source === 'glpi'
-                              ? { background: 'rgba(244,114,182,0.12)', color: '#f472b6' }
-                              : { background: 'rgba(143,191,194,0.12)', color: T }}>
-                            {t.source}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5 font-mono text-[10px]" style={{ color: MUTED }}>
-                          {t.rawId}
-                        </td>
-                        <td className="px-3 py-2.5 max-w-[280px]">
-                          <p className="truncate font-medium" style={{ color: '#f3fafa' }}>{t.title}</p>
-                        </td>
-                        <td className="px-3 py-2.5 whitespace-nowrap">
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-medium"
-                            style={{ background: `${statusColor}15`, color: statusColor, border: `1px solid ${statusColor}25` }}>
-                            {t.status}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5 whitespace-nowrap font-medium" style={{ color: priorityColor }}>
-                          {t.priority}
-                        </td>
-                        <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: t.assignee ? MUTED : '#f87171' }}>
-                          {t.assignee ?? '—'}
-                        </td>
-                        <td className="px-3 py-2.5 whitespace-nowrap">
-                          <span className="text-[9px] px-1.5 py-0.5 rounded"
-                            style={{ background: 'rgba(143,191,194,0.08)', color: T }}>
-                            {t.project}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5 whitespace-nowrap">
-                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
-                            style={{ background: `${slaColor}12`, color: slaColor }}>
-                            {SLA_LABEL[t.slaStatus as keyof typeof SLA_LABEL] ?? '—'}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5 whitespace-nowrap text-[10px]" style={{ color: slaColor }}>
-                          {t.slaStatus === 'resolved' ? '—' : slaRemaining(t.slaDeadline)}
-                        </td>
-                        <td className="px-3 py-2.5 whitespace-nowrap text-[10px]" style={{ color: 'rgba(243,250,250,0.28)' }}>
-                          {timeAgo(t.updatedAt)}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          {t.url && (
-                            <a href={t.url} target="_blank" rel="noopener noreferrer"
-                              className="opacity-30 hover:opacity-100 transition-opacity inline-flex">
-                              <ExternalLink size={11} style={{ color: T }} />
-                            </a>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-              {filtered.length > 100 && (
-                <p className="text-center py-3 text-[10px]" style={{ color: MUTED }}>
-                  Exibindo 100 de {filtered.length} tickets
-                </p>
-              )}
-            </div>
-          )}
-        </div>
+          </div>
+        ))}
       </div>
-    </>
+    </div>
+  )
+}
+
+// ── MAIN ─────────────────────────────────────────────────────────────────────
+type Tab = 'executivo' | 'glpi' | 'jira' | 'gmuds' | 'agenda'
+
+export default function OperacoesPage() {
+  const [tab, setTab] = useState<Tab>('executivo')
+
+  const { data: glpiData, isLoading: glpiLoading, refetch: refetchGlpi } = useQuery({
+    queryKey: ['glpi'],
+    queryFn: () => fetch('/api/glpi', { cache: 'no-store' }).then(r => r.json()),
+    staleTime: 2 * 60 * 1000,
+  })
+
+  const { data: jiraData, isLoading: jiraLoading, refetch: refetchJira } = useQuery({
+    queryKey: ['jira'],
+    queryFn: () => fetch('/api/jira', { cache: 'no-store' }).then(r => r.json()),
+    staleTime: 2 * 60 * 1000,
+  })
+
+  const loading = glpiLoading || jiraLoading
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'executivo', label: 'Visão Executiva' },
+    { id: 'glpi',      label: 'GLPI' },
+    { id: 'jira',      label: 'Jira' },
+    { id: 'gmuds',     label: 'GMUDs' },
+    { id: 'agenda',    label: 'Agenda' },
+  ]
+
+  return (
+    <div style={{ background: BG, minHeight: '100vh', padding: '28px 32px', fontFamily: 'Inter, sans-serif', color: '#e2e8f0' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1 style={{ ...H, fontSize: 24, fontWeight: 800, color: '#f3fafa', margin: 0 }}>Central de Operações</h1>
+          <p style={{ fontSize: 13, color: T, margin: '4px 0 0' }}>GLPI · Jira · GMUDs · Agenda</p>
+        </div>
+        <button
+          onClick={() => { refetchGlpi(); refetchJira() }}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: CARD, border: `1px solid ${BORDER}`, borderRadius: 8, color: T, cursor: 'pointer', fontSize: 12 }}>
+          <RefreshCw size={13} /> Atualizar
+        </button>
+      </div>
+
+      {/* Tab Nav */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 24, flexWrap: 'wrap', borderBottom: `1px solid ${BORDER}`, paddingBottom: 16 }}>
+        {tabs.map(t => <TabBtn key={t.id} label={t.label} active={tab === t.id} onClick={() => setTab(t.id)} />)}
+      </div>
+
+      {/* Content */}
+      {tab === 'executivo' && <ExecutiveView glpiData={glpiData} jiraData={jiraData} />}
+      {tab === 'glpi'      && <GLPIView  data={glpiData}  loading={glpiLoading} />}
+      {tab === 'jira'      && <JiraView  data={jiraData}  loading={jiraLoading} />}
+      {tab === 'gmuds'     && <GMUDView />}
+      {tab === 'agenda'    && <AgendaView />}
+    </div>
   )
 }

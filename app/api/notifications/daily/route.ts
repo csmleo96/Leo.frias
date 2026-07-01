@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import nodemailer from 'nodemailer'
+import { sendEmail } from '@/lib/email/sender'
 
 export const dynamic = 'force-dynamic'
 
@@ -202,44 +202,28 @@ function generateEmailHTML(kpis: any, status: string, summaryLines: string[]) {
 </html>`
 }
 
-async function sendEmail(kpis: any, status: string, summaryLines: string[]) {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.warn('⚠️  SMTP não configurado, pulando envio de email')
-    return { ok: false, reason: 'SMTP not configured' }
+async function sendEmailNotification(kpis: any, status: string, summaryLines: string[]) {
+  const emailList = (process.env.NOTIFICATION_EMAIL_TO || process.env.SMTP_USER || '')
+    .split(',').map(e => e.trim()).filter(Boolean)
+
+  if (emailList.length === 0) {
+    console.warn('⚠️  Nenhum destinatário configurado')
+    return { ok: false, reason: 'No recipients' }
   }
 
-  try {
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT || '587'),
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    })
+  const html = generateEmailHTML(kpis, status, summaryLines)
+  const result = await sendEmail({
+    to: emailList,
+    subject: `📊 Executive Board Report — ${new Date().toLocaleDateString('pt-BR')}`,
+    html,
+  })
 
-    const html = generateEmailHTML(kpis, status, summaryLines)
-
-    // Parse multiple recipients separated by comma
-    const emailList = (process.env.NOTIFICATION_EMAIL_TO || process.env.SMTP_USER)
-      .split(',')
-      .map(e => e.trim())
-      .filter(Boolean)
-    const toList = emailList.join(', ')
-
-    const info = await transporter.sendMail({
-      from: `"CS Cockpit" <${process.env.SMTP_USER}>`,
-      to: toList,
-      subject: `📊 Executive Board Report — ${new Date().toLocaleDateString('pt-BR')}`,
-      html,
-    })
-
-    console.log('✅ Email enviado para:', emailList.join('; '), 'MessageID:', info.messageId)
-    return { ok: true, to: emailList, count: emailList.length }
-  } catch (error) {
-    console.error('❌ Erro ao enviar email:', error)
-    return { ok: false, error: String(error) }
+  if (result.ok) {
+    console.log(`✅ Email enviado via ${result.method} para: ${emailList.join('; ')}`)
+    return { ok: true, to: emailList, count: emailList.length, method: result.method }
+  } else {
+    console.error('❌ Erro ao enviar email:', result.error)
+    return { ok: false, error: result.error }
   }
 }
 
@@ -312,7 +296,7 @@ export async function POST() {
     const summaryLines = generateSummary(kpis, status)
 
     // Send email
-    const emailResult = await sendEmail(kpis, status, summaryLines)
+    const emailResult = await sendEmailNotification(kpis, status, summaryLines)
 
     // Send Teams
     const teamsResult = await sendTeams(kpis, status, summaryLines)

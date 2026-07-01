@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
     })
 
     const sb = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!)
-    await sb.from('audit_log').insert({ action: 'email_sent', module: 'notifications', description: `Resumo executivo enviado para ${TO}`, level: 'info' }).throwOnError().catch(() => {})
+    await sb.from('audit_log').insert({ action: 'email_sent', module: 'notifications', description: `Resumo executivo enviado para ${TO}`, level: 'info' })
 
     return NextResponse.json({ ok: true, to: TO, sentAt: new Date().toISOString() })
   } catch (e: any) {

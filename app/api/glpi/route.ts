@@ -87,6 +87,7 @@ export async function GET(request: NextRequest) {
       'forcedisplay[10]': '80',  // groups_id (grupo responsável)
       'forcedisplay[11]': '50',  // requesttypes_id (tipo de requisição)
       'forcedisplay[12]': '71',  // entities_id (entidade/departamento)
+      'forcedisplay[13]': '17',  // solvedate
     })
 
     if (statusFilter !== 'all') {
@@ -158,6 +159,9 @@ export async function GET(request: NextRequest) {
         }
       }
 
+      const nowMs = Date.now()
+      const createdMs = t[19] ? new Date(String(t[19])).getTime() : nowMs
+      const modMs = t[15] ? new Date(String(t[15])).getTime() : nowMs
       return {
         id: t[2] ?? '?',
         title: t[1] ?? '(sem título)',
@@ -169,12 +173,15 @@ export async function GET(request: NextRequest) {
         typeLabel: TYPE_LABEL[Number(t[14])] ?? 'Incidente',
         dateMod: t[15] ?? null,
         dateCreation: t[19] ?? null,
+        solveDate: t[17] ?? null,
+        daysOpen: Math.floor((nowMs - createdMs) / 86400000),
+        daysSinceUpdate: Math.floor((nowMs - modMs) / 86400000),
         assignee: t[5] ? String(t[5]) : null,
-        origin, // CLIENTE | INFRAESTRUTURA | BANCO_DE_DADOS | MONITORAMENTO
-        category, // Categoria de origem
+        origin,
+        category,
         categoryId,
         groupId,
-        isAutomated: origin !== 'CLIENTE', // true se for automático
+        isAutomated: origin !== 'CLIENTE',
       }
     })
 

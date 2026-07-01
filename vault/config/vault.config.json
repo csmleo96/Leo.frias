@@ -1,0 +1,45 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2026-07-01T17:50:34.092Z",
+  "portal": {
+    "name": "Leonardo CS Cockpit",
+    "theme": "dark",
+    "language": "pt-BR",
+    "timezone": "America/Sao_Paulo"
+  },
+  "reports": {
+    "schedules": {
+      "daily": "0 7 * * 1-5",
+      "weekly": "0 8 * * 1",
+      "monthly": "0 8 1 * *"
+    },
+    "recipients": [
+      "leo.frias@xtentgroup.com",
+      "ribeiro@xtentgroup.com"
+    ],
+    "defaultFormat": "pdf"
+  },
+  "backups": {
+    "enabled": true,
+    "retentionDays": {
+      "daily": 30,
+      "weekly": 90,
+      "monthly": 365
+    },
+    "schedule": {
+      "daily": "0 2 * * *",
+      "weekly": "0 3 * * 0",
+      "monthly": "0 4 1 * *"
+    }
+  },
+  "ai": {
+    "enabled": true,
+    "model": "gpt-4o",
+    "maxTokensPerReport": 16000
+  },
+  "security": {
+    "sessionTimeoutMinutes": 480,
+    "requireMfa": false,
+    "allowedIpRanges": []
+  }
+}
