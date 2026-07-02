@@ -67,8 +67,8 @@ export async function getAccessToken(): Promise<string | null> {
   if (refresh) {
     const data = await refreshToken(refresh)
     if (data.access_token) {
-      const response_headers = new Headers()
-      const exp = String(Date.now() + data.expires_in * 1000)
+      const _response_headers = new Headers()
+      const _exp = String(Date.now() + data.expires_in * 1000)
       return data.access_token
     }
   }

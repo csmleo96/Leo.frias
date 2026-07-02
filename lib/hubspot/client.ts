@@ -300,7 +300,7 @@ function mapTicket(r: any, portalId: string) {
 export async function syncObject(
   objectType: 'contacts' | 'companies' | 'deals' | 'tickets',
   portalId: string,
-  fullSync = true,
+  _fullSync = true,
 ): Promise<{ synced: number; errors: number }> {
   const sb = await createClient()
   const table = `hubspot_${objectType}`

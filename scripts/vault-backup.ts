@@ -5,10 +5,8 @@
  * Or via N8N HTTP webhook: POST /api/vault/backups/run
  */
 
-import { createReadStream, createWriteStream, readdirSync, statSync, existsSync, mkdirSync, readFileSync } from 'fs'
+import { readdirSync, statSync, existsSync, mkdirSync, readFileSync } from 'fs'
 import { join, relative } from 'path'
-import { createGzip } from 'zlib'
-import { pipeline } from 'stream/promises'
 import { randomUUID } from 'crypto'
 
 type Frequency = 'daily' | 'weekly' | 'monthly'

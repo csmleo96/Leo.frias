@@ -6,7 +6,6 @@ import { createClient } from '@supabase/supabase-js'
 import * as dotenv from 'dotenv'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
-import { readFileSync } from 'fs'
 
 dotenv.config({ path: join(dirname(fileURLToPath(import.meta.url)), '../.env.local') })
 
