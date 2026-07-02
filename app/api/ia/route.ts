@@ -159,12 +159,14 @@ export async function GET() {
   const summaryLines = buildSummary(glpi, jira, insights, predictions)
 
   // Log
-  await sb.from('audit_log').insert({
-    action: 'ia_summary_generated', module: 'ia',
-    description: `Resumo gerado — ${insights.length} insights, ${predictions.length} previsões`,
-    metadata: { glpiCount: glpi.length, jiraCount: jira.length, insightCount: insights.length },
-    level: 'info',
-  }).then(() => {}).catch(() => {})
+  try {
+    await sb.from('audit_log').insert({
+      action: 'ia_summary_generated', module: 'ia',
+      description: `Resumo gerado — ${insights.length} insights, ${predictions.length} previsões`,
+      metadata: { glpiCount: glpi.length, jiraCount: jira.length, insightCount: insights.length },
+      level: 'info',
+    })
+  } catch { /* non-fatal audit log */ }
 
   const all = [...glpi, ...jira]
   return NextResponse.json({

@@ -342,8 +342,9 @@ async function logToSupabase(payload: {
 }) {
   try {
     const { createClient } = await import('@/lib/supabase/server')
-    const supabase = createClient()
-    await supabase.from('notification_logs').insert({
+    const supabase = await createClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('notification_logs').insert({
       channel: 'email',
       status: payload.status,
       recipients: payload.recipients,

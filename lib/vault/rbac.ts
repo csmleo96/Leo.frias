@@ -62,7 +62,7 @@ export function withRBAC(
   required: VaultPermission | VaultPermission[],
   handler: RouteHandler
 ) {
-  return async (req: NextRequest, params?: { params?: Record<string, string> }) => {
+  return async (req: NextRequest, ctx?: { params?: Promise<Record<string, string>> }) => {
     const role = await resolveRole(req)
 
     if (!role) {
@@ -77,6 +77,7 @@ export function withRBAC(
       )
     }
 
-    return handler(req, { role, params: params?.params })
+    const resolvedParams = ctx?.params ? await ctx.params : undefined
+    return handler(req, { role, params: resolvedParams })
   }
 }

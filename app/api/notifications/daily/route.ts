@@ -313,10 +313,10 @@ export async function POST() {
         status: overallStatus,
         channel: channels || 'none',
         delivery_time: deliveryTime,
-        recipients: [
-          emailResult.to || process.env.NOTIFICATION_EMAIL_TO || '',
+        recipients: ([
+          ...(Array.isArray(emailResult.to) ? emailResult.to : [emailResult.to || process.env.NOTIFICATION_EMAIL_TO || '']),
           process.env.TEAMS_WEBHOOK_URL ? 'Teams Board' : '',
-        ].filter(Boolean),
+        ] as string[]).filter(Boolean),
         kpis,
         metadata: {
           emailOk: emailResult.ok,

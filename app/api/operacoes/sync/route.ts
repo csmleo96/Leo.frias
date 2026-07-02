@@ -135,7 +135,7 @@ export async function POST() {
   // ── Jira ────────────────────────────────────────────────────────────
   try {
     const issues = await fetchJiraIssues()
-    const rows = issues.map(i => {
+    const rows = issues.map((i: any) => {
       const slaHours = JIRA_SLA[i.priority] ?? 24
       const isResolved = ['done', 'resolved', 'closed'].includes((i.statusCategory ?? '').toLowerCase())
       const sla = computeSla(i.created, slaHours, isResolved)
