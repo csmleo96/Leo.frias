@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
 
 env:
   NODE_VERSION: "20"
@@ -37,7 +38,6 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          # Stub env vars for build — real values live in Vercel
           NEXT_PUBLIC_APP_URL: http://localhost:3000
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: placeholder
@@ -52,24 +52,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Scan for secrets
+      - name: Scan for secrets (TruffleHog)
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
           extra_args: --only-verified
+        continue-on-error: false
 
       - name: Check for .env files
         run: |
-          if find . -name ".env*" -not -name ".env.example" -not -path "./.git/*" | grep -q .; then
-            echo "❌ ERROR: .env files found — do not commit credentials!"
+          if find . -name ".env*" \
+               -not -name ".env.example" \
+               -not -path "./.git/*" | grep -q .; then
+            echo "❌ ERROR: .env files found — never commit credentials!"
             exit 1
           fi
-          echo "✅ No .env files found"
+          echo "✅ No .env credential files committed"
 
-  # ── Deploy to Vercel ─────────────────────────────────────────────────────────
+  # ── Deploy Preview (PRs) ─────────────────────────────────────────────────────
   deploy-preview:
     name: Deploy Preview
     runs-on: ubuntu-latest
@@ -95,6 +98,7 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
+  # ── Deploy Production (main) ──────────────────────────────────────────────────
   deploy-production:
     name: Deploy Production
     runs-on: ubuntu-latest
