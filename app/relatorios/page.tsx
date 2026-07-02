@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { Download, RefreshCw, Loader2, AlertCircle } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend, Area, CartesianGrid,
+  PieChart, Pie, Cell, Legend, CartesianGrid,
 } from 'recharts'
 import * as XLSX from 'xlsx'
 
@@ -15,7 +15,7 @@ const MUTED = 'rgba(243,250,250,0.45)'
 const heading = { fontFamily: 'var(--font-heading), "Space Grotesk", sans-serif' }
 
 const COLORS_STATUS = ['#fbbf24', T, '#a78bfa', '#fb923c', '#7dd3a8', '#94a3b8']
-const COLORS_PRIORITY = ['#ef4444', '#f87171', '#fb923c', '#fbbf24', '#94a3b8', '#94a3b8']
+const _COLORS_PRIORITY = ['#ef4444', '#f87171', '#fb923c', '#fbbf24', '#94a3b8', '#94a3b8']
 
 interface GlpiStats { total: number; new: number; inProgress: number; pending: number; solved: number; closed: number }
 interface GlpiTicket { id: number; statusLabel: string; priorityLabel: string; typeLabel: string }

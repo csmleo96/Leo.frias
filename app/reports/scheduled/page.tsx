@@ -24,7 +24,7 @@ interface ScheduleLog {
   metadata: Record<string, any>
 }
 
-interface ScheduleStatus {
+interface _ScheduleStatus {
   nextExecution: string
   lastExecution?: string
   timezone: string

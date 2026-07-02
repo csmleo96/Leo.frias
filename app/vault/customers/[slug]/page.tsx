@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
-  FolderOpen, FileText, Activity, AlertTriangle,
+  FolderOpen, AlertTriangle,
   ChevronLeft, RefreshCw, HardDrive, Calendar
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
