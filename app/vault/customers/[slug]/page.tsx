@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
-  FolderOpen, AlertTriangle,
-  ChevronLeft, RefreshCw, HardDrive, Calendar
+  FolderOpen,
+  ChevronLeft, RefreshCw, HardDrive
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -47,6 +47,7 @@ export default function CustomerDetailPage() {
     }
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (slug) load() }, [slug])
 
   if (!customer) {

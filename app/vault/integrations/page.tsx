@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plug, RefreshCw, CheckCircle, XCircle, AlertTriangle, ExternalLink } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Plug, RefreshCw, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import type { SystemHealth } from '@/types/vault'
 
@@ -71,7 +71,7 @@ export default function IntegrationsPage() {
     ...(INTEGRATION_META[i.slug] ?? { label: i.slug, category: 'Outro', description: '' }),
   })) ?? []) as unknown as Integration[]
 
-  const categories = [...new Set(Object.values(INTEGRATION_META).map(m => m.category))]
+  const _categories = [...new Set(Object.values(INTEGRATION_META).map(m => m.category))]
   const connected = integrations.filter(i => i.status === 'connected').length
 
   function StatusIcon({ status }: { status: string }) {
