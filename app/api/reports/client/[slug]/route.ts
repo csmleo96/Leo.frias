@@ -52,7 +52,7 @@ async function collectJira(base: string, projectKeys: string[]) {
     ? allIssues.filter(i => projectKeys.includes(i.project?.key ?? ''))
     : allIssues
 
-  const now = Date.now()
+  const _now = Date.now()
   const open = issues.filter(i => i.statusCategory !== 'done')
   const done = issues.filter(i => i.statusCategory === 'done')
   const overdue = open.filter(i => i.daysRemaining !== null && i.daysRemaining < 0)

@@ -4,12 +4,6 @@ import { createClient } from '@/lib/supabase/server'
 export const dynamic = 'force-dynamic'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-function pct(a: number, b: number) { return b > 0 ? Math.round((a / b) * 100) : 0 }
-
-function daysAgo(date: string): number {
-  return Math.floor((Date.now() - new Date(date).getTime()) / 86400000)
-}
-
 function hoursAgo(date: string): number {
   return Math.floor((Date.now() - new Date(date).getTime()) / 3600000)
 }
@@ -249,14 +243,6 @@ async function analyzeDatadog() {
     console.error('Erro ao analisar Datadog:', error)
     return null
   }
-}
-
-function groupBy(arr: any[], key: string): Record<string, number> {
-  return arr.reduce((acc, item) => {
-    const k = item[key] || 'Unknown'
-    acc[k] = (acc[k] || 0) + 1
-    return acc
-  }, {})
 }
 
 function determineHealth(jira: any, glpi: any, zabbix: any, datadog: any): string {

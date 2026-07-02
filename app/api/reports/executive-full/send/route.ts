@@ -57,15 +57,6 @@ function grid4(items: Array<{ label: string; value: string | number; color?: str
   return `<table width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>`
 }
 
-function grid2(items: Array<{ label: string; value: string | number; color?: string }>) {
-  const cells = items.map(i => `
-    <td width="50%" style="padding:10px 6px;text-align:center;vertical-align:top">
-      <div style="font-size:20px;font-weight:700;color:${i.color ?? C.text}">${i.value}</div>
-      <div style="font-size:11px;color:${C.muted};margin-top:3px;text-transform:uppercase;letter-spacing:.5px">${i.label}</div>
-    </td>`).join('')
-  return `<table width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>`
-}
-
 function pill(text: string, color: string) {
   return `<span style="display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;background:${color}22;color:${color};border:1px solid ${color}44">${text}</span>`
 }

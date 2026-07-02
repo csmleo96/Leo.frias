@@ -166,7 +166,7 @@ function generateEmailHTML(kpis: any, status: string, summaryLines: string[]) {
   </div>
 
   <div class="content">
-    ${summaryLines.map((line, i) => {
+    ${summaryLines.map((line, _i) => {
       if (!line) return '<div style="height: 12px;"></div>'
       if (line.includes('Status Geral') || line.includes('Principais Indicadores') || line.includes('Destaques') || line.includes('Atenção') || line.includes('Próximas Ações')) {
         return `<div class="section"><div class="section-title">${line.replace(/^(Status Geral:|Principais Indicadores|Destaques|Atenção|Próximas Ações)/i, '').trim()}</div>`
@@ -227,7 +227,7 @@ async function sendEmailNotification(kpis: any, status: string, summaryLines: st
   }
 }
 
-async function sendTeams(kpis: any, status: string, summaryLines: string[]) {
+async function sendTeams(kpis: any, status: string, _summaryLines: string[]) {
   if (!process.env.TEAMS_WEBHOOK_URL) {
     console.warn('⚠️  Teams webhook não configurado, pulando envio')
     return { ok: false, reason: 'Teams webhook not configured' }

@@ -141,7 +141,7 @@ function buildRankings(clients: any[]) {
 }
 
 // ── Roadmap ────────────────────────────────────────────────────────────────
-function buildRoadmap(clients: any[]) {
+function buildRoadmap(_clients: any[]) {
   const now = new Date()
   const d30 = new Date(now.getTime() + 30 * 86400000).toLocaleDateString('pt-BR')
   const d60 = new Date(now.getTime() + 60 * 86400000).toLocaleDateString('pt-BR')

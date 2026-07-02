@@ -24,8 +24,8 @@ export async function GET(request: NextRequest) {
   const reportType = searchParams.get('type') ?? 'contacts-last30'
   const _ownerId = searchParams.get('owner') ?? undefined
   const _pipeline = searchParams.get('pipeline') ?? undefined
-  const dateFrom = searchParams.get('dateFrom') ?? undefined
-  const dateTo = searchParams.get('dateTo') ?? undefined
+  const _dateFrom = searchParams.get('dateFrom') ?? undefined
+  const _dateTo = searchParams.get('dateTo') ?? undefined
 
   try {
     let result: any = {}
