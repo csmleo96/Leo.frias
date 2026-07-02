@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Loader2, RefreshCw, AlertTriangle, CheckCircle2, Clock, Users, TrendingDown, AlertCircle } from 'lucide-react'
+import { Loader2, RefreshCw, AlertCircle } from 'lucide-react'
 
 const T = '#8fbfc2'
 const CARD = '#0d1a1e'
@@ -54,7 +54,7 @@ interface ExecutiveMetrics {
 
 export default function GlpiPage() {
   const [tickets, setTickets] = useState<Ticket[]>([])
-  const [stats, setStats] = useState<Stats | null>(null)
+  const [, setStats] = useState<Stats | null>(null)
   const [metrics, setMetrics] = useState<ExecutiveMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -79,7 +79,7 @@ export default function GlpiPage() {
       }))
 
       // Calcular métricas executivas - CORRIGIDO para contar TODOS os tickets
-      const criticalCount = categorizedTickets.filter(t => t.priority >= 5).length
+      const _criticalCount = categorizedTickets.filter(t => t.priority >= 5).length
       const overdueCount = categorizedTickets.filter(t => t.daysOpen > 7 && ![5, 6].includes(t.status)).length
       const last24h = categorizedTickets.filter(t => {
         if (!t.dateMod) return false
@@ -95,7 +95,7 @@ export default function GlpiPage() {
         daysOpen: t.dateMod ? Math.floor((Date.now() - new Date(t.dateMod).getTime()) / 86400000) : 0,
       }))
 
-      const customerTicketsForMetrics = categorizedWithDays.filter(t => t.origin === 'CLIENTE')
+      const _customerTicketsForMetrics = categorizedWithDays.filter(t => t.origin === 'CLIENTE')
       const infraTicketsForMetrics = categorizedWithDays.filter(t => t.origin === 'INFRAESTRUTURA')
       const dbTicketsForMetrics = categorizedWithDays.filter(t => t.origin === 'BANCO_DE_DADOS')
       const allOperationalForMetrics = categorizedWithDays.filter(t => t.isAutomated)

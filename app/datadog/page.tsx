@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Gauge, RefreshCw, ExternalLink, Search, AlertTriangle,
   CheckCircle2, XCircle, MinusCircle, Activity, Server,
-  Clock, Bell, WifiOff, Settings, ChevronDown, ChevronUp,
+  Bell, WifiOff, Settings, ChevronDown, ChevronUp,
 } from 'lucide-react'
 
 // ── Design tokens (matches operacoes/page pattern) ────────────────────────────
@@ -124,7 +124,7 @@ const MON_TYPE: Record<string, string> = {
 
 // ── Config panel ──────────────────────────────────────────────────────────────
 
-function ConfigPanel({ onSave }: { onSave: () => void }) {
+function ConfigPanel({ onSave: _onSave }: { onSave: () => void }) {
   return (
     <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
