@@ -22,8 +22,8 @@ async function hsSearch(objectType: string, filterGroups: any[], properties: str
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const reportType = searchParams.get('type') ?? 'contacts-last30'
-  const ownerId = searchParams.get('owner') ?? undefined
-  const pipeline = searchParams.get('pipeline') ?? undefined
+  const _ownerId = searchParams.get('owner') ?? undefined
+  const _pipeline = searchParams.get('pipeline') ?? undefined
   const dateFrom = searchParams.get('dateFrom') ?? undefined
   const dateTo = searchParams.get('dateTo') ?? undefined
 

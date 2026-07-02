@@ -67,12 +67,12 @@ async function createTarGz(sourceDir: string, destFile: string): Promise<number>
     totalSize += stat.size
     const rel = relative(sourceDir, f)
     gz.write(`\n=== FILE: ${rel} (${stat.size} bytes) ===\n`)
-    const content = await import('fs').then(m => m.readFileSync(f, 'utf-8').catch?.() ?? '')
+    const content = (() => { try { return readFileSync(f, 'utf-8') } catch { return '' } })()
     gz.write(String(content))
   }
 
   gz.end()
-  await new Promise((res, rej) => out.on('finish', res).on('error', rej))
+  await new Promise<void>((res, rej) => out.on('finish', () => res()).on('error', rej))
   return totalSize
 }
 

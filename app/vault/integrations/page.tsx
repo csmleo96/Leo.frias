@@ -65,10 +65,10 @@ export default function IntegrationsPage() {
 
   useEffect(() => { load() }, [])
 
-  const integrations: Integration[] = health?.integrations.map(i => ({
+  const integrations: Integration[] = (health?.integrations.map(i => ({
     ...i,
     ...(INTEGRATION_META[i.slug] ?? { label: i.slug, category: 'Outro', description: '' }),
-  })) ?? []
+  })) ?? []) as unknown as Integration[]
 
   const categories = [...new Set(Object.values(INTEGRATION_META).map(m => m.category))]
   const connected = integrations.filter(i => i.status === 'connected').length

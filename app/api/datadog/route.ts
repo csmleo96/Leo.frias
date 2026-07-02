@@ -19,7 +19,7 @@ async function ddFetch(path: string) {
   return res.json()
 }
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   const apiKey = process.env.DD_API_KEY
   const appKey = process.env.DD_APP_KEY
 

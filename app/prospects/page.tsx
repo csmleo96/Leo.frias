@@ -37,7 +37,7 @@ export default function ProspectsPage() {
 
   async function load() {
     const { data } = await supabase.from('prospects').select('*').order('created_at', { ascending: false })
-    setProspects(data ?? [])
+    setProspects((data ?? []) as unknown as Prospect[])
     setLoading(false)
   }
   useEffect(() => { load() }, [])
@@ -59,7 +59,7 @@ export default function ProspectsPage() {
       value: form.value ? parseFloat(form.value) : null,
       notes: form.notes || null,
     }).select().single()
-    if (data) setProspects(prev => [data, ...prev])
+    if (data) setProspects(prev => [data as unknown as Prospect, ...prev])
     setForm({ name: '', email: '', phone: '', company: '', stage: 'lead', value: '', notes: '' })
     setOpen(false)
     setSaving(false)

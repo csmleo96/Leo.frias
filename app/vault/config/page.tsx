@@ -77,7 +77,7 @@ export default function ConfigPage() {
         parent[path[1]] = value
         config[path[0]] = parent
       }
-      return { ...d, config: config as VaultConfig }
+      return { ...d, config: config as unknown as VaultConfig }
     })
   }
 

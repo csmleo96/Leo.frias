@@ -33,13 +33,13 @@ export async function getValidToken(): Promise<string | null> {
   const account = await getAccount()
   if (!account) return null
 
-  const expiresAt = new Date(account.token_expires_at).getTime()
+  const expiresAt = new Date(account.token_expires_at ?? '').getTime()
   const now = Date.now()
 
   // Refresh if expires in less than 5 minutes
   if (now >= expiresAt - 5 * 60 * 1000) {
     try {
-      const refreshToken = decrypt(account.refresh_token_enc)
+      const refreshToken = decrypt(account.refresh_token_enc ?? '')
       const body = new URLSearchParams({
         grant_type: 'refresh_token',
         client_id: process.env.HUBSPOT_CLIENT_ID!,
@@ -64,7 +64,7 @@ export async function getValidToken(): Promise<string | null> {
     }
   }
 
-  return decrypt(account.access_token_enc)
+  return decrypt(account.access_token_enc ?? '')
 }
 
 // ── API fetch wrapper ─────────────────────────────────────────────────────
@@ -339,7 +339,8 @@ export async function syncObject(
   // Upsert in chunks of 200
   for (let i = 0; i < batch.length; i += 200) {
     const chunk = batch.slice(i, i + 200)
-    const { error } = await sb.from(table).upsert(chunk, { onConflict: 'hs_id' })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (sb as any).from(table).upsert(chunk, { onConflict: 'hs_id' })
     if (error) { console.error(`Sync ${objectType} error:`, error); errors += chunk.length }
     else synced += chunk.length
   }

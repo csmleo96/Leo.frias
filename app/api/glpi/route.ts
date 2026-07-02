@@ -125,8 +125,8 @@ export async function GET(request: NextRequest) {
       // Classificar baseado em categoria, grupo e tipo de requisição
       const categoryId = Number(t[7]) || 0
       const groupId = Number(t[80]) || 0
-      const requestTypeId = Number(t[50]) || 0
-      const entityId = Number(t[71]) || 0
+      const _requestTypeId = Number(t[50]) || 0
+      const _entityId = Number(t[71]) || 0
 
       // Determinar tipo de origem
       let origin = 'CLIENTE' // padrão

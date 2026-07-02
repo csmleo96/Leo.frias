@@ -16,7 +16,7 @@ const eslintConfig = defineConfig([
       // API routes use `any` extensively for external service payloads
       "@typescript-eslint/no-explicit-any": "off",
       // Unused vars in catch blocks are common pattern
-      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
       // Module assignment pattern used in some legacy API routes
       "@next/next/no-assign-module-variable": "warn",
     },
