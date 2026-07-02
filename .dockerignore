@@ -1,0 +1,11 @@
+.git
+.next
+node_modules
+.env*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
+README.md
+screenshots/
+vault/
