@@ -99,6 +99,7 @@ nav a:hover{color:var(--amber);}
 .ch.r{border-left:6px solid var(--red);background:#FFF8F8;}
 .ch.y{border-left:6px solid var(--yel);background:#FFFDF0;}
 .ch.g{border-left:6px solid var(--grn);background:#F5FFF8;}
+.ch.n{border-left:6px solid var(--g400);background:var(--g50);}
 .cn2{font-size:1.2rem;font-weight:800;color:var(--navy);}
 .csg{font-size:.75rem;color:var(--g600);margin-top:.2rem;}
 .minis{display:flex;gap:.75rem;flex-wrap:wrap;}
@@ -450,6 +451,87 @@ function clientSection(cl: any): string {
 <div class="div"></div>`
 }
 
+// ── Banco XCMG — card de cliente N/D ──────────────────────────────────────
+function xcmgClientSection(): string {
+  const cats = [
+    ['Zabbix / Observabilidade', ['Hosts monitorados','Disponibilidade (%)','Alertas ativos','Problemas Disaster/High/Medium','CPU, Memória e Storage']],
+    ['GLPI / Service Desk', ['Chamados abertos','Chamados críticos','Sem 1º atendimento','SLA de atendimento','Resolvidos no período']],
+    ['Jira / Projetos', ['Tasks abertas','Tarefas vencidas','Críticos em aberto','MTTA / MTTR','Sprints ativos']],
+    ['Backup (Veeam)', ['Jobs agendados','Taxa de sucesso','Falhas registradas','Retenção configurada','Teste de restauração']],
+    ['Disaster Recovery', ['RPO configurado','RTO configurado','Status de replicação','Failover testado','Plano documentado']],
+    ['Kubernetes / RKE', ['Nodes ativos','Control plane','Pods em CrashLoop','Workloads críticos','Uso de recursos']],
+  ]
+
+  const catBlocks = cats.map(([title, items]) => `
+    <div>
+      <div class="nd-title-gray" style="margin-bottom:.4rem">${title}</div>
+      <ul class="ind-list">${(items as string[]).map(i => `<li>${i}</li>`).join('')}</ul>
+    </div>`).join('')
+
+  return `
+<!-- ═══ BANCO XCMG ═══ -->
+<div id="xcmg" style="background:var(--g50)">
+<div class="sec">
+  <div class="ey">⚪ Cliente — Integração Pendente</div>
+  <div class="st">Banco XCMG</div>
+  <div class="card">
+    <div class="ch n">
+      <div>
+        <div class="cn2"><span class="badge bnd">⚪ Indeterminado</span> Banco XCMG</div>
+        <div class="csg">Integração não configurada — todos os indicadores indisponíveis para classificação de farol</div>
+      </div>
+      <div class="minis">
+        <div class="mini"><div class="mv" style="color:var(--g400)">N/D</div><div class="ml">Score</div></div>
+        <div class="mini"><div class="mv" style="color:var(--g400)">N/D</div><div class="ml">Disponib.</div></div>
+        <div class="mini"><div class="mv" style="color:var(--g400)">N/D</div><div class="ml">Tickets</div></div>
+        <div class="mini"><div class="mv" style="color:var(--g400)">N/D</div><div class="ml">Vencidos</div></div>
+      </div>
+    </div>
+    <div class="cb">
+
+      <div class="sst">Resumo Executivo</div>
+      <p style="font-size:.82rem;color:var(--g600);margin-bottom:1rem;line-height:1.75">
+        O Banco XCMG está cadastrado na carteira da XTENTGROUP, porém sem integração ativa com as fontes de monitoramento (Zabbix, GLPI, Jira, Veeam, Datadog). Todos os indicadores de saúde operacional, disponibilidade, service desk, backup e continuidade estão indisponíveis. Para ativar o monitoramento completo, é necessário configurar o agente Zabbix nos hosts, mapear os grupos no GLPI e criar o projeto no Jira.
+      </p>
+
+      <div class="sst">Indicadores Indisponíveis por Fonte</div>
+      <div class="g3" style="margin-bottom:1.25rem">${catBlocks}</div>
+
+      <div class="sst">Banco de Dados — Banco XCMG</div>
+      ${xcmgBlock()}
+
+      <div class="sst" style="margin-top:1.25rem">Critérios de Farol — quando integrado</div>
+      <div class="g3" style="margin-bottom:1rem">
+        <div class="farol-crit fc-g"><div class="fc-title" style="color:var(--grn)">🟢 Verde — Saudável</div>Score ≥ 90 · Disponib. ≥ 99,5% · Sem Disaster/High · SLA OK · Backup validado · Storage &lt; 80%</div>
+        <div class="farol-crit fc-y"><div class="fc-title" style="color:var(--yel)">🟡 Amarelo — Atenção</div>Score 70–89 · Disponib. 99–99,5% · Alertas HIGH &gt; 2 · Chamados sem atendimento &gt; 5 · Tarefas vencidas &gt; 3</div>
+        <div class="farol-crit fc-r"><div class="fc-title" style="color:var(--red)">🔴 Vermelho — Crítico</div>Score &lt; 70 · Disponib. &lt; 99% · Disaster ativo · SLA comprometido · Backup com falha · Storage &gt; 90%</div>
+      </div>
+
+      <div class="sst">Próximos Passos para Ativação</div>
+      <table class="apt">
+        <thead><tr><th>Ação</th><th>Responsável</th><th>Prazo Estimado</th><th>Prioridade</th></tr></thead>
+        <tbody>
+          <tr><td>Instalar agente Zabbix nos servidores XCMG</td><td>N8 / Infra XTENTGROUP</td><td>7 dias</td><td><span class="ap1">ALTA</span></td></tr>
+          <tr><td>Criar empresa e configurar GLPI para XCMG</td><td>Service Desk</td><td>3 dias</td><td><span class="ap1">ALTA</span></td></tr>
+          <tr><td>Criar projeto XCMG no Jira e mapear SLA</td><td>CS / Projetos</td><td>5 dias</td><td><span class="ap2">MÉDIA</span></td></tr>
+          <tr><td>Configurar jobs de backup Veeam</td><td>Infra XTENTGROUP</td><td>10 dias</td><td><span class="ap2">MÉDIA</span></td></tr>
+          <tr><td>Documentar RPO/RTO e plano de DR</td><td>Arquitetura</td><td>15 dias</td><td><span class="ap3">NORMAL</span></td></tr>
+          <tr><td>Ativar monitoramento Banco XCMG (módulo específico)</td><td>CS + Infra</td><td>20 dias</td><td><span class="ap2">MÉDIA</span></td></tr>
+        </tbody>
+      </table>
+
+      <div class="sst">Recomendação Executiva</div>
+      <div style="background:var(--g100);border-radius:8px;padding:.9rem 1.1rem;font-size:.81rem;color:var(--navy);line-height:1.7">
+        Priorizar a ativação da integração Zabbix + GLPI + Jira para o Banco XCMG nas próximas 2 semanas. Sem visibilidade operacional, riscos de indisponibilidade, falhas de backup e gargalos de performance não podem ser detectados ou prevenidos. A integração completa permite classificação de farol automática e inclusão deste cliente no ciclo de QBR e relatório CSM.
+      </div>
+
+    </div>
+  </div>
+</div>
+</div>
+<div class="div"></div>`
+}
+
 // ── Master HTML ────────────────────────────────────────────────────────────
 function buildHTML360(portfolioData: any, hsData: any): string {
   const p = portfolioData.portfolio ?? {}
@@ -483,11 +565,27 @@ function buildHTML360(portfolioData: any, hsData: any): string {
   const hostsUp       = clients.reduce((s: number, c: any) => s + (c.zabbix?.hostsUp ?? 0), 0)
   const hostsPct      = totalHosts > 0 ? Math.round((hostsUp / totalHosts) * 100) : 100
 
-  const navLinks = clients.map((cl: any) => {
-    const anchor = cl.slug ?? cl.name.toLowerCase().replace(/\s/g, '-')
-    const em = cl.farol === 'vermelho' ? '🔴' : cl.farol === 'amarelo' ? '🟡' : '🟢'
-    return `<a href="#${anchor}">${em} ${cl.name}</a>`
-  }).join('')
+  const navLinks = [
+    ...clients.map((cl: any) => {
+      const anchor = cl.slug ?? cl.name.toLowerCase().replace(/\s/g, '-')
+      const em = cl.farol === 'vermelho' ? '🔴' : cl.farol === 'amarelo' ? '🟡' : '🟢'
+      return `<a href="#${anchor}">${em} ${cl.name}</a>`
+    }),
+    `<a href="#xcmg">⚪ Banco XCMG</a>`,
+  ].join('')
+
+  const xcmgTableRow = `<tr style="background:var(--g50)">
+    <td><div class="cn"><a href="#xcmg" style="color:var(--navy);text-decoration:none">Banco XCMG</a></div><div class="cs">Integração não configurada — indicadores indisponíveis</div></td>
+    <td><span class="badge bnd">⚪ Indeterminado</span></td>
+    <td style="color:var(--g400)">N/D</td>
+    <td style="color:var(--g400)">N/D</td>
+    <td style="color:var(--g400)">N/D</td>
+    <td style="color:var(--g400)">N/D</td>
+    <td style="color:var(--g400)">⚪ N/D</td>
+    <td style="color:var(--g400)">N/D</td>
+    <td style="color:var(--g400)">N/D</td>
+    <td style="color:var(--g400)">N/D</td>
+  </tr>`
 
   const farolTableRows = clients.map((cl: any) => {
     const avail = cl.zabbix?.availability
@@ -549,7 +647,7 @@ function buildHTML360(portfolioData: any, hsData: any): string {
   <h1>Status da Carteira de Clientes</h1>
   <div class="hs">Período: ${gen} · ${time} · Fontes: Zabbix · GLPI · Jira · Datadog · HubSpot</div>
   <div class="kpi-row">
-    <div class="kpi"><div class="v">${clients.length}</div><div class="l">Clientes</div></div>
+    <div class="kpi"><div class="v">${clients.length + 1}</div><div class="l">Clientes</div></div>
     <div class="kpi"><div class="v">${totalHosts}</div><div class="l">Hosts</div></div>
     <div class="kpi"><div class="v" style="color:${hostsPct >= 99 ? '#68D391' : '#F6E05E'}">${hostsPct}%</div><div class="l">Disponib.</div></div>
     <div class="kpi"><div class="v">${totalOpen}</div><div class="l">Tickets Abertos</div></div>
@@ -588,14 +686,14 @@ function buildHTML360(portfolioData: any, hsData: any): string {
       <th>Backup</th><th>DR</th><th>Banco XCMG</th><th>Kubernetes</th>
       <th>Zabbix</th><th>Suporte</th>
     </tr></thead>
-    <tbody>${farolTableRows}</tbody>
+    <tbody>${farolTableRows}${xcmgTableRow}</tbody>
   </table>
   </div>
 </div></div>
 <div class="div"></div>
 
 ${clients.map((cl: any) => clientSection(cl)).join('')}
-
+${xcmgClientSection()}
 <!-- CONSOLIDADO -->
 <div id="consol" class="bw"><div class="sec">
   <div class="ey">Visão Consolidada</div>
