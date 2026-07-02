@@ -179,7 +179,7 @@ function GLPIView({ data, loading }: { data: any; loading: boolean }) {
   const [filter, setFilter] = useState('todos')
   const [search, setSearch] = useState('')
 
-  const tickets: any[] = data?.tickets ?? []
+  const tickets: any[] = useMemo(() => data?.tickets ?? [], [data?.tickets])
 
   const filtered = useMemo(() => {
     let list = tickets
@@ -264,7 +264,7 @@ function JiraView({ data, loading }: { data: any; loading: boolean }) {
   const [search, setSearch] = useState('')
   const [projectFilter, setProjectFilter] = useState('todos')
 
-  const issues: any[] = data?.issues ?? []
+  const issues: any[] = useMemo(() => data?.issues ?? [], [data?.issues])
 
   const projects = useMemo(() => {
     const map: Record<string, string> = {}

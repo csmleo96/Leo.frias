@@ -113,7 +113,7 @@ export default function JiraPage() {
     loadProjectsData()
   }, [loadProjectsData])
 
-  const formatDate = (iso: string) => {
+  const _formatDate = (iso: string) => {
     const d = new Date(iso)
     return d.toLocaleDateString('pt-BR', { month: 'short', day: 'numeric' })
   }
