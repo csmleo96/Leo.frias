@@ -1,5 +1,6 @@
 {
   "crons": [
+    { "path": "/api/notifications/farol",              "schedule": "0 12 * * *"  },
     { "path": "/api/reports/executive-portfolio/send", "schedule": "45 11 * * *" },
     { "path": "/api/reports/executive-full/send",      "schedule": "0 12 * * *" },
     { "path": "/api/reports/client/connectpsp/send",   "schedule": "0 12 * * *" },
