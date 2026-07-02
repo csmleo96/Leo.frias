@@ -5,30 +5,16 @@ export const dynamic = 'force-dynamic'
 
 const BASE = () => process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
-// ── Brand ──────────────────────────────────────────────────────────────────
-const C = {
-  bg: '#07111F', cont: '#0B1F3A', card: '#112447', border: '#1E3A5F',
-  orange: '#F58220', green: '#22C55E', yellow: '#FACC15', red: '#EF4444',
-  blue: '#38BDF8', purple: '#A78BFA', muted: '#8BA6C1', text: '#E2EBF5',
-  white: '#FFFFFF', deep: '#0D1A2F',
-}
-
-const FL = {
-  verde:    { color: C.green,  emoji: '🟢', label: 'Verde'    },
-  amarelo:  { color: C.yellow, emoji: '🟡', label: 'Amarelo'  },
-  vermelho: { color: C.red,    emoji: '🔴', label: 'Vermelho' },
-}
-
-// ── Farol 360° criteria (spec-compliant) ──────────────────────────────────
+// ── Farol 360° criteria ────────────────────────────────────────────────────
 function computeFarol360(cr: any): 'vermelho' | 'amarelo' | 'verde' {
-  const avail   = cr.zabbix?.availability ?? 100
-  const score   = cr.healthScore ?? 0
+  const avail    = cr.zabbix?.availability ?? 100
+  const score    = cr.healthScore ?? 0
   const disaster = cr.zabbix?.disaster ?? 0
-  const high    = cr.zabbix?.high ?? 0
+  const high     = cr.zabbix?.high ?? 0
   const critGLPI = cr.glpi?.critical ?? 0
-  const critJira = cr.jira?.critical ?? 0
   const overdue  = cr.jira?.overdue ?? 0
-  const unattended = cr.glpi?.unattended ?? 0
+  const unatt    = cr.glpi?.unattended ?? 0
+  const critJira = cr.jira?.critical ?? 0
   const probs: any[] = cr.zabbix?.criticalProblems ?? []
 
   const hasCpuHigh     = probs.some(p => /cpu/i.test(p.name ?? '') && (p.severity ?? 0) >= 4)
@@ -37,728 +23,647 @@ function computeFarol360(cr: any): 'vermelho' | 'amarelo' | 'verde' {
   const hasVpnDown     = probs.some(p => /vpn|tunnel|ipsec|wan|link|mpls/i.test(p.name ?? '') && (p.severity ?? 0) >= 4)
   const hasSqlIssue    = probs.some(p => /sql|mssql|database|deadlock/i.test(p.name ?? '') && (p.severity ?? 0) >= 4)
 
-  // VERMELHO — qualquer item crítico
-  if (
-    disaster > 0 || avail < 99.0 || score < 70 ||
-    hasStorageCrit || hasVpnDown || hasSqlIssue ||
-    (critGLPI > 5) || (overdue > 10)
-  ) return 'vermelho'
-
-  // AMARELO — indicadores de atenção
-  if (
-    high > 2 || avail < 99.5 || score < 90 ||
-    hasCpuHigh || hasMemHigh ||
-    unattended > 5 || critJira > 0 || overdue > 3
-  ) return 'amarelo'
-
+  if (disaster > 0 || avail < 99.0 || score < 70 || hasStorageCrit || hasVpnDown || hasSqlIssue || critGLPI > 5 || overdue > 10) return 'vermelho'
+  if (high > 2 || avail < 99.5 || score < 90 || hasCpuHigh || hasMemHigh || unatt > 5 || critJira > 0 || overdue > 3) return 'amarelo'
   return 'verde'
 }
 
 function farolReason360(cr: any, farol: string): string {
-  const disaster = cr.zabbix?.disaster ?? 0
   const avail    = cr.zabbix?.availability ?? 100
   const score    = cr.healthScore ?? 0
+  const disaster = cr.zabbix?.disaster ?? 0
+  const high     = cr.zabbix?.high ?? 0
   const critGLPI = cr.glpi?.critical ?? 0
   const overdue  = cr.jira?.overdue ?? 0
-  const high     = cr.zabbix?.high ?? 0
   const unatt    = cr.glpi?.unattended ?? 0
-  const critJ    = cr.jira?.critical ?? 0
-
   if (farol === 'vermelho') {
-    if (disaster > 0)   return `${disaster} problema(s) Disaster ativo(s) na infraestrutura — impacto direto ao negócio`
-    if (avail < 99.0)   return `Disponibilidade abaixo de 99% (${avail}%) — SLA comprometido`
-    if (critGLPI > 5)   return `${critGLPI} chamados críticos sem resolução no GLPI`
-    if (overdue > 10)   return `${overdue} atividades vencidas no Jira — risco de SLA`
-    return `Health Score crítico (${score}/100) — ação imediata necessária`
+    if (disaster > 0)   return `${disaster} problema(s) Disaster ativo(s) — impacto direto ao negócio`
+    if (avail < 99.0)   return `Disponibilidade ${avail}% — SLA comprometido`
+    if (critGLPI > 5)   return `${critGLPI} chamados críticos sem resolução`
+    return `Health Score crítico (${score}/100) — ação imediata`
   }
   if (farol === 'amarelo') {
-    if (avail < 99.5)   return `Disponibilidade ${avail}% — abaixo do target de 99,5%`
-    if (high > 2)       return `${high} alertas HIGH ativos no Zabbix — monitoramento intensificado`
-    if (unatt > 5)      return `${unatt} chamados sem primeiro atendimento — risco de SLA`
-    if (critJ > 0)      return `${critJ} issue(s) críticas no Jira sem resolução`
-    if (overdue > 3)    return `${overdue} atividades vencidas no Jira — atenção requerida`
-    return `Health Score moderado (${score}/100) — acompanhamento preventivo`
+    if (avail < 99.5)   return `Disponibilidade ${avail}% — abaixo de 99,5%`
+    if (high > 2)       return `${high} alertas HIGH ativos no Zabbix`
+    if (unatt > 5)      return `${unatt} chamados sem atendimento — risco de SLA`
+    if (overdue > 3)    return `${overdue} atividades vencidas no Jira`
+    return `Health Score ${score}/100 — acompanhamento preventivo`
   }
-  return `Ambiente totalmente saudável — Score ${score}/100, disponibilidade ${avail}%, sem alertas críticos`
+  return `Score ${score}/100 · Disponib. ${avail}% · Sem alertas críticos`
 }
 
-// ── HTML helpers ───────────────────────────────────────────────────────────
-const pill = (t: string, c: string) =>
-  `<span style="display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;background:${c}22;color:${c};border:1px solid ${c}44">${t}</span>`
+// ── CSS (design system idêntico ao relatório executivo) ────────────────────
+const CSS = `
+:root{--navy:#1A2847;--navy-d:#111D38;--navy-m:#243460;--amber:#F5A300;--w:#FFF;--g50:#F8F9FB;--g100:#ECEEF3;--g200:#D4D8E4;--g400:#8C93A8;--g600:#5A6278;--red:#C53030;--rl:#FFF5F5;--rm:#FC8181;--yel:#D69E2E;--yl:#FFFFF0;--ym:#F6E05E;--grn:#22543D;--gl:#F0FFF4;--gm:#68D391;--blu:#2B6CB0;--bl:#EBF4FF;--pur:#6B46C1;--pl:#FAF5FF;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--g50);color:var(--navy);font-family:'Segoe UI',system-ui,sans-serif;line-height:1.6;font-size:14px;}
+nav{position:sticky;top:0;z-index:100;background:var(--navy-d);border-bottom:3px solid var(--amber);padding:0 1.5rem;display:flex;align-items:center;gap:1.2rem;height:48px;overflow-x:auto;white-space:nowrap;}
+.nb{color:var(--amber);font-weight:800;font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;margin-right:.5rem;flex-shrink:0;}
+nav a{color:rgba(255,255,255,.65);text-decoration:none;font-size:.73rem;font-weight:500;flex-shrink:0;}
+nav a:hover{color:var(--amber);}
+.hero{background:linear-gradient(135deg,var(--navy-d) 0%,var(--navy-m) 60%,#2d4080 100%);padding:3rem 2rem 2.5rem;text-align:center;}
+.hl{color:var(--amber);font-size:.68rem;font-weight:700;letter-spacing:.2em;text-transform:uppercase;margin-bottom:.5rem;}
+.hero h1{color:var(--w);font-size:clamp(1.4rem,4vw,2.2rem);font-weight:800;line-height:1.2;margin-bottom:.4rem;}
+.hs{color:rgba(255,255,255,.6);font-size:.85rem;margin-bottom:2rem;}
+.kpi-row{display:flex;flex-wrap:wrap;justify-content:center;gap:1rem;}
+.kpi{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:.9rem 1.2rem;min-width:110px;text-align:center;}
+.kpi .v{color:var(--amber);font-size:1.8rem;font-weight:800;line-height:1;}
+.kpi .l{color:rgba(255,255,255,.55);font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;margin-top:.3rem;}
+.fps{display:flex;flex-wrap:wrap;justify-content:center;gap:.75rem;margin-top:1.5rem;}
+.fp{background:rgba(255,255,255,.08);border-radius:100px;padding:.35rem .9rem;font-size:.78rem;color:var(--w);display:flex;align-items:center;gap:.4rem;}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
+.dr{background:#FC8181;box-shadow:0 0 5px rgba(252,129,129,.6);}
+.dy{background:#F6E05E;box-shadow:0 0 5px rgba(246,224,94,.6);}
+.dg{background:#68D391;box-shadow:0 0 5px rgba(104,211,145,.6);}
+.sec{max-width:1100px;margin:0 auto;padding:2.5rem 1.5rem;}
+.ey{color:var(--amber);font-size:.67rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;margin-bottom:.35rem;}
+.st{color:var(--navy);font-size:1.4rem;font-weight:800;margin-bottom:.4rem;}
+.sd{color:var(--g600);font-size:.84rem;margin-bottom:1.5rem;}
+.bw{background:var(--w);}
+.bg{background:var(--g50);}
+.div{height:4px;background:linear-gradient(90deg,var(--amber),transparent);max-width:1100px;margin:0 auto;}
+.ft{width:100%;border-collapse:collapse;font-size:.8rem;}
+.ft thead tr{background:var(--navy);color:var(--w);}
+.ft th{padding:.65rem .9rem;font-size:.69rem;text-align:left;font-weight:600;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;}
+.ft tbody tr{border-bottom:1px solid var(--g100);background:var(--w);}
+.ft tbody tr:hover{background:var(--g50);}
+.ft td{padding:.65rem .9rem;vertical-align:middle;}
+.cn{font-weight:700;color:var(--navy);} .cs{font-size:.7rem;color:var(--g600);}
+.badge{display:inline-flex;align-items:center;gap:.3rem;padding:.22rem .65rem;border-radius:100px;font-size:.72rem;font-weight:700;}
+.br{background:var(--rl);color:var(--red);border:1px solid var(--rm);}
+.by{background:var(--yl);color:#975A16;border:1px solid var(--ym);}
+.bgg{background:var(--gl);color:var(--grn);border:1px solid var(--gm);}
+.bnd{background:#EDF2F7;color:#718096;border:1px solid #CBD5E0;}
+.card{background:var(--w);border-radius:14px;box-shadow:0 2px 10px rgba(26,40,71,.08);margin-bottom:2rem;overflow:hidden;}
+.ch{padding:1.25rem 1.75rem;display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
+.ch.r{border-left:6px solid var(--red);background:#FFF8F8;}
+.ch.y{border-left:6px solid var(--yel);background:#FFFDF0;}
+.ch.g{border-left:6px solid var(--grn);background:#F5FFF8;}
+.cn2{font-size:1.2rem;font-weight:800;color:var(--navy);}
+.csg{font-size:.75rem;color:var(--g600);margin-top:.2rem;}
+.minis{display:flex;gap:.75rem;flex-wrap:wrap;}
+.mini{text-align:center;padding:.45rem .7rem;background:rgba(26,40,71,.05);border-radius:7px;min-width:65px;}
+.mini .mv{font-size:1rem;font-weight:800;color:var(--navy);}
+.mini .ml{font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;color:var(--g600);}
+.cb{padding:1.25rem 1.75rem;}
+.sst{font-size:.76rem;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.6rem;margin-top:1.2rem;display:flex;align-items:center;gap:.4rem;}
+.sst:first-child{margin-top:0;}
+.sst::before{content:'';display:block;width:3px;height:12px;background:var(--amber);border-radius:2px;}
+.it{width:100%;border-collapse:collapse;font-size:.78rem;margin-bottom:.5rem;}
+.it th{background:var(--g50);color:var(--g600);font-size:.69rem;text-transform:uppercase;letter-spacing:.05em;padding:.45rem .7rem;text-align:left;border-bottom:2px solid var(--g100);}
+.it td{padding:.55rem .7rem;border-bottom:1px solid var(--g100);vertical-align:top;}
+.it tr:last-child td{border-bottom:none;}
+.tu{color:var(--grn);font-weight:700;} .td{color:var(--red);font-weight:700;} .tf{color:var(--g400);font-weight:700;}
+.rr{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.75rem;}
+.rt{padding:.25rem .7rem;border-radius:5px;font-size:.72rem;font-weight:600;}
+.rh{background:var(--rl);color:var(--red);border:1px solid var(--rm);}
+.rm2{background:var(--yl);color:#975A16;border:1px solid var(--ym);}
+.rl2{background:var(--gl);color:var(--grn);border:1px solid var(--gm);}
+.apt{width:100%;border-collapse:collapse;font-size:.78rem;}
+.apt thead tr{background:var(--navy);color:var(--w);}
+.apt th{padding:.55rem .8rem;font-size:.69rem;text-align:left;font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
+.apt tbody tr{border-bottom:1px solid var(--g100);}
+.apt td{padding:.55rem .8rem;vertical-align:top;}
+.ap1{background:var(--rl);color:var(--red);padding:.15rem .5rem;border-radius:4px;font-size:.69rem;font-weight:700;}
+.ap2{background:var(--yl);color:#975A16;padding:.15rem .5rem;border-radius:4px;font-size:.69rem;font-weight:700;}
+.ap3{background:var(--gl);color:var(--grn);padding:.15rem .5rem;border-radius:4px;font-size:.69rem;font-weight:700;}
+.g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.25rem;}
+.g3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;}
+.nd-box{background:#FFF5F0;border:1px solid #FEB2B2;border-radius:8px;padding:.9rem 1.1rem;font-size:.78rem;color:var(--navy);line-height:1.7;}
+.nd-box-gray{background:var(--g50);border:1px solid var(--g200);border-radius:8px;padding:.9rem 1.1rem;font-size:.78rem;color:var(--g600);line-height:1.7;}
+.nd-title{font-size:.72rem;font-weight:700;color:#C53030;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;}
+.nd-title-gray{font-size:.72rem;font-weight:700;color:var(--g600);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;}
+.ind-list{padding-left:1rem;margin:0;}
+.ind-list li{font-size:.75rem;color:var(--g600);margin-bottom:.15rem;}
+.farol-crit{border-radius:8px;padding:.75rem 1rem;font-size:.75rem;line-height:1.7;}
+.fc-g{background:var(--gl);border-left:4px solid var(--gm);}
+.fc-y{background:var(--yl);border-left:4px solid var(--ym);}
+.fc-r{background:var(--rl);border-left:4px solid var(--rm);}
+.fc-title{font-weight:700;margin-bottom:.3rem;}
+.xcmg-wrap{background:#FFF8F3;border:1px solid #FBD38D;border-radius:12px;padding:1.1rem 1.3rem;margin-top:.5rem;}
+.xcmg-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.9rem;padding-bottom:.75rem;border-bottom:1px solid #FBD38D;}
+.xcmg-title{font-size:.9rem;font-weight:800;color:var(--navy);}
+.db{background:linear-gradient(135deg,var(--navy-d),var(--navy-m));border-radius:18px;padding:2.5rem;color:var(--w);}
+.db h2{color:var(--amber);font-size:1.3rem;margin-bottom:1.25rem;}
+.dg2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.75rem;}
+.ds h3{color:var(--amber);font-size:.73rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.65rem;}
+.ds p,.ds li{font-size:.82rem;color:rgba(255,255,255,.85);line-height:1.7;}
+.ds ul{padding-left:1.1rem;} .ds li{margin-bottom:.25rem;}
+footer{background:var(--navy-d);padding:1.5rem;text-align:center;}
+footer p{color:rgba(255,255,255,.35);font-size:.72rem;}
+footer span{color:var(--amber);}
+@media(max-width:640px){.sec{padding:1.75rem 1rem;}.cb{padding:1rem;}.ch{padding:1rem;}.db{padding:1.5rem;}}
+`
 
-const bar = (pct: number, c: string, h = 6) =>
-  `<div style="height:${h}px;background:#0A1629;border-radius:3px;overflow:hidden;margin-top:5px">
-    <div style="width:${Math.min(pct, 100)}%;height:100%;background:${c};border-radius:3px"></div>
-  </div>`
-
-const nd = (reason = 'Dado não disponível na fonte consultada.') =>
-  `<div style="padding:8px 12px;background:${C.deep};border-radius:6px;border-left:3px solid ${C.border};color:${C.muted};font-size:11px;font-style:italic">⚠️ ${reason}</div>`
-
-const secTitle = (n: string, title: string, color = C.orange) =>
-  `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid ${C.border}">
-    <div style="background:${color}22;border:1px solid ${color}44;color:${color};font-size:10px;font-weight:800;padding:2px 8px;border-radius:4px;min-width:28px;text-align:center">${n}</div>
-    <div style="font-size:13px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:${C.white}">${title}</div>
-  </div>`
-
-const wrap = (content: string, borderColor = C.orange, mb = 16) =>
-  `<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:${mb}px">
-  <tr><td style="padding:16px 18px;background:${C.cont};border-radius:10px;border-left:4px solid ${borderColor}">
-    ${content}
-  </td></tr></table>`
-
-const metric = (label: string, value: any, color = C.text, size = 20) =>
-  `<td style="padding:8px;text-align:center;vertical-align:top">
-    <div style="font-size:${size}px;font-weight:800;color:${color};line-height:1">${value}</div>
-    <div style="font-size:9px;color:${C.muted};text-transform:uppercase;letter-spacing:.4px;margin-top:3px">${label}</div>
-  </td>`
-
-const row4 = (...cells: string[]) =>
-  `<table width="100%" cellpadding="0" cellspacing="0"><tr>${cells.join('')}</tr></table>`
-
-// ── Section 1: Resumo Executivo ────────────────────────────────────────────
-function sec1_resumo(p: any, clients: any[]): string {
-  const critical = clients.filter(c => c.farol === 'vermelho')
-  const attention = clients.filter(c => c.farol === 'amarelo')
-  const healthy = clients.filter(c => c.farol === 'verde')
-  const totalProbs = clients.reduce((s, c) => s + (c.zabbix?.totalProblems ?? 0), 0)
-  const totalTickets = clients.reduce((s, c) => s + (c.glpi?.open ?? 0) + (c.jira?.open ?? 0), 0)
-
-  let summary = `A carteira XTENTGROUP opera com <strong style="color:${C.white}">${clients.length} clientes ativos</strong>, registrando score médio de portfólio de <strong style="color:${p.portfolioScore >= 80 ? C.green : p.portfolioScore >= 60 ? C.yellow : C.red}">${p.portfolioScore}/100</strong> e disponibilidade média de <strong style="color:${C.blue}">${p.avgAvailability}%</strong> no período. `
-
-  if (critical.length > 0) {
-    summary += `<strong style="color:${C.red}">Atenção crítica:</strong> ${critical.map(c => c.name).join(', ')} requer(em) atuação imediata da engenharia — incidentes P1 ou SLA comprometido. `
-  } else {
-    summary += `Nenhum cliente em estado crítico no período analisado — sinal positivo de estabilidade operacional. `
-  }
-
-  if (attention.length > 0) {
-    summary += `${attention.map(c => c.name).join(', ')} apresenta(m) indicadores em atenção — acompanhamento preventivo recomendado. `
-  }
-
-  summary += `O ambiente concentra <strong style="color:${C.white}">${totalProbs} problema(s) ativos</strong> no Zabbix e <strong style="color:${C.white}">${totalTickets} chamado(s) abertos</strong> entre GLPI e Jira. `
-  summary += `A tendência operacional é <strong style="color:${healthy.length >= 3 ? C.green : C.yellow}">${healthy.length >= 3 ? 'estável com perspectiva positiva' : 'requer atenção gerencial'}</strong>. Integrações de Backup, DR, Kubernetes e SQL Server direto estão pendentes — prioridade técnica para elevar a cobertura de observabilidade.`
-
-  return wrap(`
-    ${secTitle('01', 'Resumo Executivo')}
-    <div style="font-size:13px;color:${C.muted};line-height:1.8">${summary}</div>
-  `)
+// ── Helpers ────────────────────────────────────────────────────────────────
+function farolBadge(f: string): string {
+  if (f === 'vermelho') return '<span class="badge br"><span class="dot dr"></span>Crítico</span>'
+  if (f === 'amarelo')  return '<span class="badge by"><span class="dot dy"></span>Atenção</span>'
+  return '<span class="badge bgg"><span class="dot dg"></span>Saudável</span>'
 }
 
-// ── Section 2: Farol Executivo ─────────────────────────────────────────────
-function sec2_farol(clients: any[]): string {
-  const rows = clients.map(cl => {
-    const f = FL[cl.farol as keyof typeof FL] ?? FL.amarelo
-    return `<tr>
-      <td style="padding:10px 12px;border-bottom:1px solid ${C.border};font-size:13px;font-weight:700;color:${C.white};white-space:nowrap">${cl.name}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${C.border}">${pill(f.emoji + ' ' + f.label, f.color)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${C.muted}">${cl.farolReason ?? cl.farolReason360 ?? '—'}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${C.border};font-size:12px;font-weight:700;color:${cl.healthScore >= 90 ? C.green : cl.healthScore >= 70 ? C.yellow : C.red};text-align:right;white-space:nowrap">${cl.healthScore}/100</td>
-    </tr>`
-  }).join('')
-
-  return wrap(`
-    ${secTitle('02', 'Farol Executivo')}
-    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
-      <tr style="background:#0A1629">
-        ${['Cliente','Status','Justificativa','Score'].map(h =>
-          `<th style="padding:8px 12px;text-align:left;font-size:10px;color:${C.muted};text-transform:uppercase;border-bottom:1px solid ${C.border}">${h}</th>`
-        ).join('')}
-      </tr>
-      ${rows}
-    </table>
-  `)
+function chClass(f: string): string {
+  return f === 'vermelho' ? 'r' : f === 'amarelo' ? 'y' : 'g'
 }
 
-// ── Section 3: Disponibilidade ─────────────────────────────────────────────
-function sec3_disponibilidade(clients: any[]): string {
-  const rows = clients.map(cl => {
-    const z = cl.zabbix
-    const avail = z?.availability ?? '—'
-    const availColor = typeof avail === 'number' ? (avail >= 99.5 ? C.green : avail >= 99 ? C.yellow : C.red) : C.muted
-    const totalProbs = z?.totalProblems ?? '—'
-    const disaster = z?.disaster ?? 0
-    const high = z?.high ?? 0
-    const hostsText = z ? `${z.hostsUp ?? '—'}/${z.hostsTotal ?? '—'}` : '—'
-    return `<tr>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;font-weight:700;color:${C.white}">${cl.name}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;font-weight:700;color:${availColor}">${typeof avail === 'number' ? avail + '%' : '—'}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${C.text}">${hostsText}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${disaster > 0 ? C.red : C.muted}">${disaster > 0 ? disaster + ' Disaster' : '—'}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${high > 2 ? C.yellow : C.muted}">${high > 0 ? high + ' High' : '—'}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${C.muted}">${typeof totalProbs === 'number' ? totalProbs + ' ativos' : '—'}</td>
-    </tr>`
-  }).join('')
-
-  const totalDisaster = clients.reduce((s, c) => s + (c.zabbix?.disaster ?? 0), 0)
-  const avgAvail = (() => {
-    const vals = clients.map(c => c.zabbix?.availability).filter(v => v != null)
-    return vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '—'
-  })()
-
-  return wrap(`
-    ${secTitle('03', 'Disponibilidade & SLA', C.blue)}
-    ${row4(
-      metric('Disponib. Média', avgAvail + '%', Number(avgAvail) >= 99.5 ? C.green : C.yellow),
-      metric('Disaster Ativos', totalDisaster, totalDisaster > 0 ? C.red : C.green),
-      metric('Clientes Verde', clients.filter(c => c.farol === 'verde').length, C.green),
-      metric('Clientes Risco', clients.filter(c => c.farol !== 'verde').length, C.yellow),
-    )}
-    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:12px">
-      <tr style="background:#0A1629">
-        ${['Cliente','Disponib.','Hosts Up/Total','Disaster','High','Problemas'].map(h =>
-          `<th style="padding:7px 12px;text-align:left;font-size:10px;color:${C.muted};text-transform:uppercase;border-bottom:1px solid ${C.border}">${h}</th>`
-        ).join('')}
-      </tr>
-      ${rows}
-    </table>
-  `, C.blue)
+function slaClass(sla: string): string {
+  return sla === 'Em Risco' ? 'class="td"' : sla === 'Atenção' ? 'style="color:var(--yel);font-weight:700"' : 'class="tu"'
 }
 
-// ── Section 4: Continuidade (Backup / DR / HA) ─────────────────────────────
-function sec4_continuidade(): string {
-  return wrap(`
-    ${secTitle('04', 'Continuidade de Negócio — Backup / DR / HA', C.red)}
-    <table width="100%" cellpadding="0" cellspacing="0"><tr>
-      <td width="33%" style="padding:0 6px 0 0;vertical-align:top">
-        <div style="font-size:10px;font-weight:700;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Backup (Veeam)</div>
-        ${nd('Integração Veeam Backup não configurada. Dados de jobs, sucesso/falha e retenção indisponíveis. Recomenda-se integração prioritária para garantir conformidade e RPO.')}
-      </td>
-      <td width="33%" style="padding:0 3px;vertical-align:top">
-        <div style="font-size:10px;font-weight:700;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Disaster Recovery</div>
-        ${nd('Integração DR não configurada. RPO, RTO, status de replicação e resultados de testes indisponíveis. Risco contratual e regulatório elevado sem visibilidade de DR.')}
-      </td>
-      <td width="34%" style="padding:0 0 0 6px;vertical-align:top">
-        <div style="font-size:10px;font-weight:700;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Alta Disponibilidade</div>
-        ${nd('Integração HA/Cluster não configurada. Status de failover, integridade de cluster e replicação indisponíveis.')}
-      </td>
-    </tr></table>
-  `, C.red)
+function scoreColor(s: number): string {
+  return s >= 90 ? 'var(--grn)' : s >= 70 ? 'var(--yel)' : 'var(--red)'
 }
 
-// ── Section 5: Bancos de Dados ─────────────────────────────────────────────
-function sec5_bancos(clients: any[]): string {
-  const sqlRows = clients.map(cl => {
-    const sqlProbs: any[] = cl.sqlProblems ?? []
-    const count = sqlProbs.length
-    return `<tr>
-      <td style="padding:8px 12px;border-bottom:1px solid ${C.border};font-size:12px;font-weight:700;color:${C.white}">${cl.name}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid ${C.border};font-size:12px">${count > 0 ? pill(count + ' alerta(s) Zabbix', C.yellow) : `<span style="color:${C.green}">✓ Sem alertas detectados</span>`}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid ${C.border};font-size:11px;color:${C.muted}">${sqlProbs.slice(0, 2).map(p => p.name ?? '').join('; ') || '—'}</td>
-    </tr>`
-  }).join('')
-
-  return wrap(`
-    ${secTitle('05', 'Bancos de Dados', C.blue)}
-    <div style="font-size:10px;font-weight:700;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">SQL Server — Alertas via Zabbix (parcial)</div>
-    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:12px">
-      <tr style="background:#0A1629">
-        ${['Cliente','Status','Detalhes Zabbix'].map(h =>
-          `<th style="padding:7px 12px;text-align:left;font-size:10px;color:${C.muted};text-transform:uppercase;border-bottom:1px solid ${C.border}">${h}</th>`
-        ).join('')}
-      </tr>
-      ${sqlRows}
-    </table>
-    <div style="font-size:10px;font-weight:700;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">YugabyteDB · RabbitMQ · SQL Direto</div>
-    ${nd('Integrações diretas de banco de dados não configuradas. Alertas parciais de SQL Server disponíveis somente via keywords no Zabbix. YugabyteDB (nodes, replicação, latência) e RabbitMQ (filas, consumers, throughput) indisponíveis.')}
-  `, C.blue)
+function availColor(a: number): string {
+  return a >= 99.5 ? 'var(--grn)' : a >= 99 ? 'var(--yel)' : 'var(--red)'
 }
 
-// ── Section 6: Kubernetes / RKE ────────────────────────────────────────────
-function sec6_kubernetes(): string {
-  return wrap(`
-    ${secTitle('06', 'Kubernetes / RKE', C.purple)}
-    ${nd('Integração Kubernetes/RKE não configurada. Dados de nodes, control plane, workers, pods, CrashLoopBackOff, evictions e utilização de recursos indisponíveis. Recomenda-se habilitar monitoramento via Datadog Agent ou Prometheus/Grafana.')}
-  `, C.purple)
-}
-
-// ── Section 7: Infraestrutura ──────────────────────────────────────────────
-function sec7_infra(clients: any[]): string {
-  const rows = clients.map(cl => {
-    const z = cl.zabbix
-    if (!z) return `<tr><td colspan="6" style="padding:8px 12px;font-size:12px;color:${C.muted}">${cl.name} — Zabbix indisponível</td></tr>`
-    const cpuProbs = (cl.zabbix?.criticalProblems ?? []).filter((p: any) => /cpu/i.test(p.name ?? ''))
-    const memProbs = (cl.zabbix?.criticalProblems ?? []).filter((p: any) => /memor|ram/i.test(p.name ?? ''))
-    const storProbs = cl.storageProblems ?? []
-    const vpnProbs = cl.vpnProblems ?? []
-    const cell = (count: number, label: string, warn: number, crit: number) =>
-      count >= crit ? `<span style="color:${C.red};font-weight:700">${count} ${label}</span>` :
-      count >= warn ? `<span style="color:${C.yellow};font-weight:700">${count} ${label}</span>` :
-      `<span style="color:${C.green}">✓</span>`
-    return `<tr>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;font-weight:700;color:${C.white}">${cl.name}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px">${cell(cpuProbs.length, 'alertas', 1, 3)}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px">${cell(memProbs.length, 'alertas', 1, 3)}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px">${cell(storProbs.length, 'alertas', 1, 3)}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px">${cell(vpnProbs.length, 'alertas', 1, 2)}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${C.muted}">${z.totalProblems ?? '—'} ativos · ${z.hostsDown ?? 0} hosts down</td>
-    </tr>`
-  }).join('')
-
-  return wrap(`
-    ${secTitle('07', 'Infraestrutura', C.orange)}
-    <div style="font-size:11px;color:${C.muted};margin-bottom:10px">Dados extraídos do Zabbix via filtragem por keywords. CPU, Memória e Rede detalhados via Grafana — indisponível (integração pendente).</div>
-    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
-      <tr style="background:#0A1629">
-        ${['Cliente','CPU','Memória','Storage','VPN/Links','Resumo Zabbix'].map(h =>
-          `<th style="padding:7px 12px;text-align:left;font-size:10px;color:${C.muted};text-transform:uppercase;border-bottom:1px solid ${C.border}">${h}</th>`
-        ).join('')}
-      </tr>
-      ${rows}
-    </table>
-  `, C.orange)
-}
-
-// ── Section 8: Service Desk (GLPI + Jira) ─────────────────────────────────
-function sec8_servicedesk(clients: any[]): string {
-  const totalOpen   = clients.reduce((s, c) => s + (c.glpi?.open ?? 0) + (c.jira?.open ?? 0), 0)
-  const totalCrit   = clients.reduce((s, c) => s + (c.glpi?.critical ?? 0) + (c.jira?.critical ?? 0), 0)
-  const totalOverdue = clients.reduce((s, c) => s + (c.jira?.overdue ?? 0), 0)
-  const totalResolved = clients.reduce((s, c) => s + (c.glpi?.resolved ?? 0) + (c.jira?.done ?? 0), 0)
-
-  const rows = clients.map(cl => {
-    const gl = cl.glpi
-    const ji = cl.jira
-    const glpiOpen = gl?.open ?? '—'
-    const jiraOpen = ji?.open ?? '—'
-    const critical = (gl?.critical ?? 0) + (ji?.critical ?? 0)
-    const overdue  = ji?.overdue ?? '—'
-    const unatt    = gl?.unattended ?? '—'
-    const sla      = cl.serviceMetrics?.sla ?? 'N/D'
-    const slaColor = sla === 'Em Risco' ? C.red : sla === 'Atenção' ? C.yellow : C.green
-    return `<tr>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;font-weight:700;color:${C.white}">${cl.name}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${C.text};text-align:center">${glpiOpen}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${C.text};text-align:center">${jiraOpen}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${critical > 0 ? C.red : C.green};font-weight:700;text-align:center">${critical}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${Number(overdue) > 3 ? C.yellow : C.muted};text-align:center">${overdue}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${Number(unatt) > 5 ? C.yellow : C.muted};text-align:center">${unatt}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${slaColor};font-weight:700">${sla}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:11px;color:${C.muted}">MTTA: ${cl.serviceMetrics?.mtta ?? 'N/D'}</td>
-    </tr>`
-  }).join('')
-
-  return wrap(`
-    ${secTitle('08', 'Service Desk — GLPI + Jira', C.green)}
-    ${row4(
-      metric('Total Abertos', totalOpen, totalOpen > 50 ? C.yellow : C.text),
-      metric('Críticos', totalCrit, totalCrit > 0 ? C.red : C.green),
-      metric('Vencidos Jira', totalOverdue, totalOverdue > 0 ? C.yellow : C.green),
-      metric('Resolvidos', totalResolved, C.green),
-    )}
-    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:12px">
-      <tr style="background:#0A1629">
-        ${['Cliente','GLPI Ab.','Jira Ab.','Críticos','Vencidos','Sem Atend.','SLA','MTTA'].map(h =>
-          `<th style="padding:7px 12px;text-align:center;font-size:10px;color:${C.muted};text-transform:uppercase;border-bottom:1px solid ${C.border};white-space:nowrap">${h}</th>`
-        ).join('')}
-      </tr>
-      ${rows}
-    </table>
-    <div style="margin-top:8px;font-size:11px;color:${C.muted}">MTTR: Dado não disponível — integração direta de tempo de resolução pendente.</div>
-  `, C.green)
-}
-
-// ── Section 9: Customer Success ────────────────────────────────────────────
-function sec9_cs(hsData: any): string {
-  const contacts = hsData?.overview?.customers ?? '—'
-  const leads = hsData?.overview?.leads ?? '—'
-  const conv = hsData?.overview?.conversionRate != null
-    ? hsData.overview.conversionRate.toFixed(1) + '%' : '—'
-
-  return wrap(`
-    ${secTitle('09', 'Customer Success', C.purple)}
-    ${row4(
-      metric('Clientes Ativos', contacts, C.green),
-      metric('Leads HubSpot', leads, C.blue),
-      metric('Taxa Conversão', conv, C.orange),
-      metric('NPS/CSAT', 'N/D', C.muted),
-    )}
-    <div style="margin-top:12px;font-size:12px;color:${C.muted};line-height:1.6">
-      Dados de NPS, CSAT, QBR, Health Score individual (HubSpot) e histórico de reuniões não estão configurados no HubSpot atual.
-      Para ativar: criar propriedades customizadas no HubSpot (nps_score, csat_score, last_qbr_date, churn_risk) e mapear via API.
+// ── Banco XCMG — bloco N/D completo ───────────────────────────────────────
+function xcmgBlock(): string {
+  return `
+<div class="xcmg-wrap">
+  <div class="xcmg-header">
+    <div>
+      <div class="xcmg-title">Banco XCMG</div>
+      <div style="font-size:.72rem;color:var(--g600);margin-top:2px">Gestão de Dados — Saúde Operacional, Desempenho e Continuidade</div>
     </div>
-    <div style="margin-top:8px">
-      ${nd('Última reunião, próxima reunião, tempo sem contato e plano de ação — dados não disponíveis. Requer configuração de propriedades customizadas no HubSpot e integração com calendário (Microsoft 365 / Google Calendar).')}
+    <span class="badge bnd">⚪ Indeterminado — integração não configurada</span>
+  </div>
+
+  <div class="g3" style="margin-bottom:1rem">
+    <div>
+      <div class="nd-title-gray">Disponibilidade</div>
+      <ul class="ind-list">
+        <li>Uptime da instância</li>
+        <li>Disponibilidade do banco (%)</li>
+        <li>Status dos serviços e conexões</li>
+        <li>Indisponibilidades na semana</li>
+        <li>Cumprimento do SLA de disponibilidade</li>
+      </ul>
     </div>
-  `, C.purple)
+    <div>
+      <div class="nd-title-gray">Performance</div>
+      <ul class="ind-list">
+        <li>Tempo médio de resposta das queries</li>
+        <li>Latência de leitura e gravação</li>
+        <li>CPU e Memória da instância</li>
+        <li>Utilização de disco e IOPS</li>
+        <li>Queries lentas identificadas</li>
+        <li>Sessões ativas e bloqueadas</li>
+        <li>Deadlocks registrados</li>
+        <li>Tendência de crescimento de carga</li>
+      </ul>
+    </div>
+    <div>
+      <div class="nd-title-gray">Integridade &amp; Saúde</div>
+      <ul class="ind-list">
+        <li>Status geral da instância</li>
+        <li>Consistência dos dados</li>
+        <li>Integridade de tabelas e índices</li>
+        <li>Alertas críticos registrados</li>
+        <li>Erros recorrentes identificados</li>
+        <li>Crescimento do banco (diário/semanal)</li>
+        <li>Espaço utilizado vs capacidade</li>
+        <li>Previsão de esgotamento (Capacity Planning)</li>
+      </ul>
+    </div>
+    <div>
+      <div class="nd-title-gray">Backup &amp; Recuperação</div>
+      <ul class="ind-list">
+        <li>Último backup executado</li>
+        <li>Taxa de sucesso dos backups</li>
+        <li>Falhas e respectivas causas</li>
+        <li>Status das rotinas de restauração</li>
+        <li>Validação das cópias de segurança</li>
+        <li>Consumo de retenção</li>
+        <li>DR — RPO e RTO</li>
+      </ul>
+    </div>
+    <div>
+      <div class="nd-title-gray">Alta Disponibilidade</div>
+      <ul class="ind-list">
+        <li>Status da replicação</li>
+        <li>Integridade do cluster</li>
+        <li>Failovers automáticos/manuais</li>
+        <li>Tempo de sincronização entre nós</li>
+        <li>Estado geral da solução de HA</li>
+      </ul>
+    </div>
+    <div>
+      <div class="nd-title-gray">Correlação Operacional</div>
+      <ul class="ind-list">
+        <li>Zabbix: alertas de disponibilidade e recursos</li>
+        <li>Grafana: tendências de performance</li>
+        <li>Jira: incidentes, MTTA e MTTR</li>
+        <li>GLPI: chamados vinculados ao banco</li>
+        <li>HubSpot: Health Score e riscos comerciais</li>
+      </ul>
+    </div>
+  </div>
+
+  <div style="margin-bottom:.9rem">
+    <div class="nd-title-gray" style="margin-bottom:.6rem">Critérios de Farol — Banco XCMG</div>
+    <div class="g3">
+      <div class="farol-crit fc-g">
+        <div class="fc-title" style="color:var(--grn)">🟢 Verde — Saudável</div>
+        Disponib. ≥ 99,5% · Sem P1 ou P2 · Performance nos parâmetros · Backup validado · Replicação íntegra · Storage &lt; 80%
+      </div>
+      <div class="farol-crit fc-y">
+        <div class="fc-title" style="color:var(--yel)">🟡 Amarelo — Atenção</div>
+        P2 resolvido no SLA · Storage &gt; 80% · Latência acima da média · Crescimento acelerado da base · Alertas sem impacto direto
+      </div>
+      <div class="farol-crit fc-r">
+        <div class="fc-title" style="color:var(--red)">🔴 Vermelho — Crítico</div>
+        Quebra de SLA · Indisponibilidade · Falha de backup · Replicação comprometida · Gargalos severos · Storage &gt; 90% · Impacto às aplicações
+      </div>
+    </div>
+  </div>
+
+  <div class="nd-box-gray">
+    <div class="nd-title-gray">Resumo Executivo XCMG</div>
+    Integração com o Banco XCMG não configurada. Todos os indicadores de disponibilidade, performance, integridade, backup e alta disponibilidade estão indisponíveis. Para ativar este módulo: configurar acesso à API ou agente de monitoramento do XCMG e mapear as métricas nas fontes Zabbix/Grafana/SQL direto. Sem visibilidade, riscos de esgotamento de capacidade, falhas de backup e degradação de performance não podem ser antecipados.
+  </div>
+</div>`
 }
 
-// ── Section 10: Comercial ──────────────────────────────────────────────────
-function sec10_comercial(hsData: any): string {
-  const ov = hsData?.overview ?? {}
-  const mrr = ov.totalRevenue ? 'R$ ' + ov.totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 0 }) : 'N/D'
-  const pipeline = ov.openPipeline ? 'R$ ' + ov.openPipeline.toLocaleString('pt-BR', { minimumFractionDigits: 0 }) : 'N/D'
-  const winRate = ov.winRate != null ? ov.winRate.toFixed(1) + '%' : '—'
-  const openDeals = ov.openDeals ?? '—'
-  const wonDeals = ov.wonDeals ?? '—'
+// ── Per-client section ─────────────────────────────────────────────────────
+function clientSection(cl: any): string {
+  const z     = cl.zabbix ?? {}
+  const gl    = cl.glpi ?? {}
+  const ji    = cl.jira ?? {}
+  const dd    = cl.datadog ?? {}
+  const bd    = cl.healthScoreBreakdown ?? {}
+  const svc   = cl.serviceMetrics ?? {}
+  const avail = z.availability ?? 100
+  const score = cl.healthScore ?? 0
+  const open  = (gl.open ?? 0) + (ji.open ?? 0)
 
-  const stageRows = (hsData?.charts?.dealsByStage ?? []).slice(0, 6).map((s: any) =>
-    `<tr>
-      <td style="padding:7px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${C.text}">${s.label ?? s.id}</td>
-      <td style="padding:7px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${C.blue};text-align:right">${s.count}</td>
-      <td style="padding:7px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${C.green};text-align:right">${s.amount ? 'R$ ' + s.amount.toLocaleString('pt-BR', { minimumFractionDigits: 0 }) : '—'}</td>
-    </tr>`
-  ).join('')
+  const headerColor = cl.farol === 'vermelho' ? 'var(--red)' : cl.farol === 'amarelo' ? 'var(--yel)' : 'var(--grn)'
+  const farolLabel  = cl.farol === 'vermelho' ? '🔴 Cliente Crítico' : cl.farol === 'amarelo' ? '🟡 Cliente em Atenção' : '🟢 Cliente Saudável'
 
-  return wrap(`
-    ${secTitle('10', 'Comercial — HubSpot CRM', C.orange)}
-    ${row4(
-      metric('Pipeline Aberto', pipeline, C.blue),
-      metric('Negócios Abertos', openDeals, C.text),
-      metric('Negócios Ganhos', wonDeals, C.green),
-      metric('Taxa de Ganho', winRate, Number(ov.winRate) >= 50 ? C.green : C.yellow),
-    )}
-    ${stageRows ? `
-    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:12px">
-      <tr style="background:#0A1629">
-        <th style="padding:7px 12px;text-align:left;font-size:10px;color:${C.muted};text-transform:uppercase;border-bottom:1px solid ${C.border}">Estágio</th>
-        <th style="padding:7px 12px;text-align:right;font-size:10px;color:${C.muted};text-transform:uppercase;border-bottom:1px solid ${C.border}">Negócios</th>
-        <th style="padding:7px 12px;text-align:right;font-size:10px;color:${C.muted};text-transform:uppercase;border-bottom:1px solid ${C.border}">Valor</th>
-      </tr>
-      ${stageRows}
-    </table>` : nd('Pipeline por estágio não disponível')}
-    <div style="margin-top:8px;font-size:11px;color:${C.muted}">MRR/ARR individuais por cliente, renovações e churn risk: ${nd('Propriedades de receita recorrente (mrr, arr, renewal_date) não configuradas no HubSpot. Recomenda-se mapear para gestão financeira completa.')}</div>
-  `, C.orange)
-}
+  // subsection: Disponibilidade
+  const dispRows = [
+    ['Disponibilidade', typeof avail === 'number' ? `<span style="color:${availColor(avail)};font-weight:700">${avail}%</span>` : '—'],
+    ['Hosts Up / Total', z.hostsTotal != null ? `${z.hostsUp ?? '—'} / ${z.hostsTotal}` : '—'],
+    ['Hosts Offline',    z.hostsDown > 0 ? `<span class="td">${z.hostsDown} offline</span>` : '<span class="tu">Nenhum</span>'],
+    ['Disaster (P1)',    z.disaster > 0 ? `<span class="td">${z.disaster} ativo(s)</span>` : '<span class="tu">Nenhum</span>'],
+    ['Alertas High (P2)',z.high > 2 ? `<span class="td">${z.high} alertas</span>` : z.high > 0 ? `<span style="color:var(--yel);font-weight:700">${z.high} alertas</span>` : '<span class="tu">Nenhum</span>'],
+    ['Problemas totais', z.totalProblems != null ? `${z.totalProblems} ativos` : '—'],
+    ['SLA Disponibilidade', svc.sla ?? 'N/D'],
+  ]
 
-// ── Section 11: Saúde Operacional ─────────────────────────────────────────
-function sec11_saude(clients: any[]): string {
-  const classify = (s: number) =>
-    s >= 95 ? { label: 'Excelente', color: C.green } :
-    s >= 85 ? { label: 'Muito Boa', color: C.green } :
-    s >= 70 ? { label: 'Atenção',   color: C.yellow } :
-    s >= 50 ? { label: 'Crítica',   color: C.red } :
-              { label: 'Emergencial', color: C.red }
+  // subsection: Bancos de Dados
+  const sqlProbs: any[] = cl.sqlProblems ?? []
+  const sqlStatus = sqlProbs.length > 0
+    ? `<span class="td">${sqlProbs.length} alerta(s) Zabbix — ${sqlProbs.slice(0, 2).map((p: any) => p.name ?? '').join('; ')}</span>`
+    : '<span class="tu">✅ Sem alertas detectados</span>'
 
-  const rows = clients.map(cl => {
-    const s = cl.healthScore ?? 0
-    const c = classify(s)
-    const bd = cl.healthScoreBreakdown ?? {}
-    return `<tr>
-      <td style="padding:10px 12px;border-bottom:1px solid ${C.border};font-size:12px;font-weight:700;color:${C.white}">${cl.name}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${C.border}">
-        <div style="font-size:18px;font-weight:900;color:${c.color}">${s}</div>
-        ${bar(s, c.color, 5)}
-        <div style="font-size:10px;color:${c.color};margin-top:2px">${c.label}</div>
-      </td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${C.border};font-size:11px;color:${C.muted}">
-        SLA ${bd.sla ?? '—'}/25 · Dispon. ${bd.disponibilidade ?? '—'}/20 · Chamados ${bd.chamados ?? '—'}/20 · Observ. ${bd.observabilidade ?? '—'}/15 · Infra ${bd.infraestrutura ?? '—'}/20
-      </td>
-    </tr>`
+  // subsection: Infra
+  const cpuProbs  = (z.criticalProblems ?? []).filter((p: any) => /cpu/i.test(p.name ?? ''))
+  const memProbs  = (z.criticalProblems ?? []).filter((p: any) => /memor|ram/i.test(p.name ?? ''))
+  const storProbs = cl.storageProblems ?? []
+  const vpnProbs  = cl.vpnProblems ?? []
+  const ok = '<span class="tu">✅ Normal</span>'
+  const infraRows = [
+    ['CPU', cpuProbs.length ? `<span class="td">${cpuProbs.length} alerta(s)</span>` : ok],
+    ['Memória', memProbs.length ? `<span style="color:var(--yel);font-weight:700">${memProbs.length} alerta(s)</span>` : ok],
+    ['Storage', storProbs.length ? `<span class="td">${storProbs.length} alerta(s)</span>` : ok],
+    ['VPN / Links', vpnProbs.length ? `<span class="td">${vpnProbs.length} alerta(s)</span>` : ok],
+    ['Datadog Monitors', dd.configured ? `${dd.summary?.ok ?? '—'} OK · ${dd.summary?.warn ?? '—'} Warn · ${dd.summary?.alert ?? '—'} Alert` : 'Não configurado'],
+  ]
+
+  // subsection: Service Desk
+  const mtta    = svc.mtta ?? 'N/D'
+  const slaText = svc.sla ?? 'N/D'
+  const sdRows  = [
+    ['Tickets GLPI abertos', gl.open ?? '—'],
+    ['Tickets Jira abertos', ji.open ?? '—'],
+    ['Críticos (GLPI)',      gl.critical > 0 ? `<span class="td">${gl.critical}</span>` : '<span class="tu">0</span>'],
+    ['Críticos (Jira)',      ji.critical > 0 ? `<span class="td">${ji.critical}</span>` : '<span class="tu">0</span>'],
+    ['Vencidos (Jira)',      ji.overdue > 0 ? `<span style="color:var(--yel);font-weight:700">${ji.overdue}</span>` : '<span class="tu">0</span>'],
+    ['Sem 1º atendimento',  gl.unattended > 5 ? `<span class="td">${gl.unattended}</span>` : gl.unattended > 0 ? `<span style="color:var(--yel);font-weight:700">${gl.unattended}</span>` : '<span class="tu">0</span>'],
+    ['Resolvidos (período)', (gl.resolved ?? 0) + (ji.done ?? 0)],
+    ['MTTA', mtta],
+    ['MTTR', svc.mttr ?? 'N/D'],
+    ['SLA Chamados', `<span ${slaClass(slaText)}>${slaText}</span>`],
+  ]
+
+  // risks
+  const risks = (cl.risks ?? []).slice(0, 5)
+  const riskRows = risks.map((r: any) => {
+    const cls = r.severity === 'critical' ? 'rh' : r.severity === 'high' ? 'rm2' : 'rl2'
+    const lbl = r.severity === 'critical' ? 'CRÍTICO' : r.severity === 'high' ? 'ALTO' : 'MÉDIO'
+    return `<span class="rt ${cls}">${lbl} — ${r.title}</span>`
   }).join('')
 
-  const avg = clients.length
-    ? Math.round(clients.reduce((s, c) => s + (c.healthScore ?? 0), 0) / clients.length)
-    : 0
-  const avgC = classify(avg)
-
-  return wrap(`
-    ${secTitle('11', 'Saúde Operacional — Score 0 a 100', C.green)}
-    <div style="text-align:center;margin-bottom:14px">
-      <div style="font-size:36px;font-weight:900;color:${avgC.color}">${avg}<span style="font-size:16px;color:${C.muted}">/100</span></div>
-      <div style="font-size:11px;color:${C.muted}">${avgC.label} · Média da Carteira</div>
-      ${bar(avg, avgC.color, 8)}
-    </div>
-    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
-      <tr style="background:#0A1629">
-        <th style="padding:7px 12px;text-align:left;font-size:10px;color:${C.muted};text-transform:uppercase;border-bottom:1px solid ${C.border}">Cliente</th>
-        <th style="padding:7px 12px;text-align:left;font-size:10px;color:${C.muted};text-transform:uppercase;border-bottom:1px solid ${C.border}">Score</th>
-        <th style="padding:7px 12px;text-align:left;font-size:10px;color:${C.muted};text-transform:uppercase;border-bottom:1px solid ${C.border}">Breakdown (SLA/Dispon./Chamados/Observ./Infra)</th>
-      </tr>
-      ${rows}
-    </table>
-    <div style="margin-top:8px;font-size:11px;color:${C.muted}">Pesos: SLA 25pts · Disponibilidade 20pts · Chamados 20pts · Observabilidade 15pts · Infraestrutura 20pts (fixo — integração pendente)</div>
-  `, C.green)
-}
-
-// ── Section 12: Principais Riscos ─────────────────────────────────────────
-function sec12_riscos(clients: any[]): string {
-  const allRisks = clients.flatMap(c =>
-    (c.risks ?? []).slice(0, 3).map((r: any) => ({ ...r, client: c.name }))
-  ).sort((a, b) => {
-    const order = { critical: 0, high: 1, medium: 2 }
-    return (order[a.severity as keyof typeof order] ?? 3) - (order[b.severity as keyof typeof order] ?? 3)
-  }).slice(0, 10)
-
-  const rows = allRisks.map(r => {
-    const sevColor = r.severity === 'critical' ? C.red : r.severity === 'high' ? '#F97316' : C.yellow
-    return `<tr>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border}">${pill(r.severity?.toUpperCase() ?? 'MÉDIO', sevColor)}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;font-weight:700;color:${C.white};white-space:nowrap">${r.client}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${C.text}">${r.title}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:11px;color:${C.muted}">${r.action ?? '—'}</td>
-    </tr>`
+  // action plan
+  const plan = (cl.actionPlan ?? []).slice(0, 6)
+  const planRows = plan.map((a: any) => {
+    const st = a.status === 'Urgente' ? 'ap1' : a.status === 'Pendente' ? 'ap2' : 'ap3'
+    return `<tr><td>${a.action}</td><td style="white-space:nowrap;color:var(--g600)">${a.owner ?? '—'}</td><td style="white-space:nowrap;color:var(--g600)">${a.deadline ?? '—'}</td><td><span class="${st}">${a.status ?? '—'}</span></td></tr>`
   }).join('')
 
-  return wrap(`
-    ${secTitle('12', 'Principais Riscos', C.red)}
-    ${allRisks.length > 0 ? `
-    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
-      <tr style="background:#0A1629">
-        ${['Severidade','Cliente','Descrição','Ação Recomendada'].map(h =>
-          `<th style="padding:7px 12px;text-align:left;font-size:10px;color:${C.muted};text-transform:uppercase;border-bottom:1px solid ${C.border}">${h}</th>`
-        ).join('')}
-      </tr>
-      ${rows}
-    </table>` : `<div style="color:${C.green};font-size:13px">✓ Nenhum risco crítico identificado no período.</div>`}
-  `, C.red)
-}
+  const itRows = (rows: [string, any][]) => rows.map(([k, v]) =>
+    `<tr><td><strong>${k}</strong></td><td>${v}</td></tr>`).join('')
 
-// ── Section 13: Plano de Ação ──────────────────────────────────────────────
-function sec13_plano(clients: any[]): string {
-  const allActions = clients.flatMap(c =>
-    (c.actionPlan ?? []).slice(0, 2).map((a: any) => ({ ...a, client: c.name }))
-  ).slice(0, 12)
+  const anchor = cl.slug ?? cl.name?.toLowerCase().replace(/\s/g, '-') ?? 'cl'
 
-  const urgColor = (s: string) => s === 'Urgente' ? C.red : s === 'Pendente' ? C.yellow : C.muted
+  return `
+<!-- ═══ ${cl.name.toUpperCase()} ═══ -->
+<div id="${anchor}" style="background:${cl.farol === 'vermelho' ? '#FFF8F8' : cl.farol === 'amarelo' ? '#FFFDF7' : 'var(--w)'}">
+<div class="sec">
+  <div class="ey">${farolLabel}</div>
+  <div class="st">${cl.name}</div>
+  <div class="card">
+    <div class="ch ${chClass(cl.farol)}">
+      <div>
+        <div class="cn2">${farolBadge(cl.farol)} ${cl.name}</div>
+        <div class="csg">${cl.farolReason ?? '—'}</div>
+      </div>
+      <div class="minis">
+        <div class="mini"><div class="mv" style="color:${scoreColor(score)}">${score}</div><div class="ml">Score</div></div>
+        <div class="mini"><div class="mv" style="color:${availColor(avail)}">${avail}%</div><div class="ml">Disponib.</div></div>
+        <div class="mini"><div class="mv" ${open > 10 ? 'style="color:var(--yel)"' : ''}>${open}</div><div class="ml">Tickets</div></div>
+        <div class="mini"><div class="mv" ${ji.overdue > 0 ? 'style="color:var(--red)"' : ''}>${ji.overdue ?? 0}</div><div class="ml">Vencidos</div></div>
+      </div>
+    </div>
+    <div class="cb">
 
-  const rows = allActions.map(a => `<tr>
-    <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;font-weight:700;color:${C.white};white-space:nowrap">${a.client}</td>
-    <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:12px;color:${C.text}">${a.action}</td>
-    <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:11px;color:${C.muted};white-space:nowrap">${a.owner ?? '—'}</td>
-    <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-size:11px;color:${C.muted};white-space:nowrap">${a.deadline ?? '—'}</td>
-    <td style="padding:9px 12px;border-bottom:1px solid ${C.border}">${pill(a.status ?? 'Pendente', urgColor(a.status ?? ''))}</td>
-  </tr>`).join('')
+      <div class="sst">Resumo Executivo</div>
+      <p style="font-size:.82rem;color:var(--g600);margin-bottom:1rem;line-height:1.75">${cl.executiveSummary ?? cl.recommendation ?? '—'}</p>
 
-  return wrap(`
-    ${secTitle('13', 'Plano de Ação', C.yellow)}
-    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
-      <tr style="background:#0A1629">
-        ${['Cliente','Ação','Responsável','Prazo','Status'].map(h =>
-          `<th style="padding:7px 12px;text-align:left;font-size:10px;color:${C.muted};text-transform:uppercase;border-bottom:1px solid ${C.border}">${h}</th>`
-        ).join('')}
-      </tr>
-      ${rows}
-    </table>
-  `, C.yellow)
-}
+      <div class="sst">Disponibilidade &amp; SLA</div>
+      <table class="it"><tbody>${itRows(dispRows)}</tbody></table>
 
-// ── Section 14: Oportunidades Consultivas ─────────────────────────────────
-function sec14_oportunidades(clients: any[]): string {
-  const all = clients.flatMap(c =>
-    (c.opportunities ?? []).slice(0, 2).map((o: any) => ({ ...o, client: c.name }))
-  ).sort((a, b) => ['alta','média','baixa'].indexOf(a.priority ?? 'baixa') - ['alta','média','baixa'].indexOf(b.priority ?? 'baixa'))
-  .slice(0, 8)
-
-  const pColor = (p: string) => p === 'alta' ? C.red : p === 'média' ? C.yellow : C.green
-
-  const cards = all.map(o => `
-    <div style="margin-bottom:8px;padding:10px 14px;background:${C.deep};border-radius:8px;border:1px solid ${C.border}">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap">
-        <div>
-          <span style="font-size:12px;font-weight:700;color:${C.white}">${o.title}</span>
-          <span style="font-size:11px;color:${C.muted}"> — ${o.client}</span>
+      <div class="sst">Saúde Operacional — Score ${score}/100</div>
+      <div style="background:var(--g50);border-radius:8px;padding:.75rem 1rem;margin-bottom:.5rem">
+        <div style="height:10px;background:var(--g100);border-radius:5px;overflow:hidden;margin-bottom:.5rem">
+          <div style="width:${score}%;height:100%;background:${scoreColor(score)};border-radius:5px"></div>
         </div>
-        ${pill(o.priority === 'alta' ? '🔴 Alta' : o.priority === 'média' ? '🟡 Média' : '🟢 Baixa', pColor(o.priority ?? 'baixa'))}
+        <div style="font-size:.75rem;color:var(--g600)">
+          SLA ${bd.sla ?? '—'}/25 &nbsp;·&nbsp; Disponib. ${bd.disponibilidade ?? '—'}/20 &nbsp;·&nbsp; Chamados ${bd.chamados ?? '—'}/20 &nbsp;·&nbsp; Observab. ${bd.observabilidade ?? '—'}/15 &nbsp;·&nbsp; Infra ${bd.infraestrutura ?? '—'}/20
+        </div>
       </div>
-      <div style="font-size:11px;color:${C.muted};margin-top:4px">${o.justification ?? ''}</div>
-      <div style="font-size:11px;color:${C.blue};margin-top:3px">💡 ${o.impact ?? ''} &nbsp;|&nbsp; 💰 ${o.revenue ?? ''}</div>
-    </div>`).join('')
 
-  return wrap(`
-    ${secTitle('14', 'Oportunidades Consultivas', C.orange)}
-    ${cards || nd('Nenhuma oportunidade identificada com dados disponíveis.')}
-  `, C.orange)
-}
+      <div class="sst">Bancos de Dados</div>
+      <table class="it" style="margin-bottom:.75rem">
+        <thead><tr><th>Sistema</th><th>Status</th><th>Fonte</th></tr></thead>
+        <tbody>
+          <tr><td><strong>SQL Server</strong></td><td>${sqlStatus}</td><td style="color:var(--g400);font-size:.72rem">Zabbix (parcial)</td></tr>
+          <tr><td><strong>YugabyteDB</strong></td><td class="tf">⚪ N/D</td><td style="color:var(--g400);font-size:.72rem">Integração pendente</td></tr>
+          <tr><td><strong>RabbitMQ</strong></td><td class="tf">⚪ N/D</td><td style="color:var(--g400);font-size:.72rem">Integração pendente</td></tr>
+        </tbody>
+      </table>
+      ${xcmgBlock()}
 
-// ── Section 15: Correlação Inteligente ────────────────────────────────────
-function sec15_correlacao(clients: any[]): string {
-  const correlations: string[] = []
+      <div class="sst" style="margin-top:1.2rem">Infraestrutura</div>
+      <table class="it"><tbody>${itRows(infraRows)}</tbody></table>
 
-  for (const cl of clients) {
-    const z = cl.zabbix
-    const gl = cl.glpi
-    const ji = cl.jira
-    const dd = cl.datadog
+      <div class="sst">Kubernetes / RKE</div>
+      <div class="nd-box-gray"><span class="nd-title-gray">N/D — </span>Integração K8s/RKE não configurada. Nodes, control plane, pods e CrashLoopBackOff indisponíveis.</div>
 
-    if ((z?.disaster ?? 0) > 0 && (gl?.open ?? 0) > 0) {
-      correlations.push(`<strong style="color:${C.white}">${cl.name}:</strong> ${z.disaster} problema(s) Disaster no Zabbix correlacionam-se com ${gl.open} chamados abertos no GLPI. O impacto operacional da infraestrutura está se refletindo diretamente no volume de suporte. Recomenda-se abertura de bridge de incidente e comunicação proativa ao cliente.`)
-    } else if ((z?.high ?? 0) > 2 && (ji?.overdue ?? 0) > 3) {
-      correlations.push(`<strong style="color:${C.white}">${cl.name}:</strong> ${z.high} alertas HIGH no Zabbix combinados com ${ji.overdue} atividades vencidas no Jira indicam pressão simultânea sobre infraestrutura e entregas de projeto. Risco de escalada para P1 caso os alertas não sejam tratados.`)
-    } else if ((gl?.critical ?? 0) > 0 && (dd?.alert ?? 0) > 0) {
-      correlations.push(`<strong style="color:${C.white}">${cl.name}:</strong> ${gl.critical} chamado(s) crítico(s) no GLPI e ${dd.alert} monitor(es) em alerta no Datadog sugerem degradação de serviço correlacionada. O time de suporte deve validar se os alertas Datadog são a causa raiz dos chamados críticos.`)
-    } else if ((ji?.overdue ?? 0) > 5) {
-      correlations.push(`<strong style="color:${C.white}">${cl.name}:</strong> ${ji.overdue} atividades vencidas no Jira sem paralelismo de alertas críticos no Zabbix/Datadog indicam risco de entrega de projeto. Recomenda-se QBR para realinhar expectativas e replanejar o backlog.`)
-    }
-  }
-
-  if (correlations.length === 0) {
-    correlations.push(`Nenhuma correlação crítica identificada entre as plataformas no período atual. O ambiente opera sem padrões anômalos que cruzem múltiplas fontes de dados. Próxima análise de correlação na janela do dia seguinte.`)
-  }
-
-  const items = correlations.map(c =>
-    `<div style="padding:10px 14px;margin-bottom:8px;background:${C.deep};border-radius:8px;border-left:3px solid ${C.orange};font-size:12px;color:${C.muted};line-height:1.6">${c}</div>`
-  ).join('')
-
-  return wrap(`
-    ${secTitle('15', 'Correlação Inteligente — Zabbix × GLPI × Jira × Datadog × HubSpot', C.blue)}
-    <div style="font-size:11px;color:${C.muted};margin-bottom:10px;font-style:italic">Análise cruzada de eventos entre plataformas. Grafana: integração pendente.</div>
-    ${items}
-  `, C.blue)
-}
-
-// ── Section 16: Dashboard do Portfólio ────────────────────────────────────
-function sec16_dashboard(clients: any[], p: any): string {
-  const rows = clients.map(cl => {
-    const f = FL[cl.farol as keyof typeof FL] ?? FL.amarelo
-    const z = cl.zabbix
-    const gl = cl.glpi
-    const ji = cl.jira
-    const disaster = z?.disaster ?? 0
-    const high = z?.high ?? 0
-    const tickets = (gl?.open ?? 0) + (ji?.open ?? 0)
-    const avail = z?.availability != null ? z.availability + '%' : '—'
-    const sla = cl.serviceMetrics?.sla ?? 'N/D'
-    const slaColor = sla === 'Em Risco' ? C.red : sla === 'Atenção' ? C.yellow : C.green
-    const scoreColor = cl.healthScore >= 90 ? C.green : cl.healthScore >= 70 ? C.yellow : C.red
-    const mtta = cl.serviceMetrics?.mtta ?? 'N/D'
-
-    return `<tr>
-      <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-size:11px;font-weight:700;color:${C.white};white-space:nowrap">${cl.name}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid ${C.border};text-align:center">${pill(f.emoji, f.color)}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-size:11px;font-weight:700;color:${scoreColor};text-align:center">${cl.healthScore}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-size:11px;color:${slaColor};text-align:center">${sla}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-size:11px;color:${avail === '—' ? C.muted : Number(avail.replace('%','')) >= 99.5 ? C.green : C.yellow};text-align:center">${avail}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-size:11px;color:${disaster > 0 ? C.red : C.muted};text-align:center">${disaster || '—'}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-size:11px;color:${high > 2 ? C.yellow : C.muted};text-align:center">${high || '—'}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-size:11px;color:${tickets > 20 ? C.yellow : C.text};text-align:center">${tickets}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-size:11px;color:${C.muted};text-align:center">${mtta}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-size:11px;color:${C.muted};text-align:center">N/D</td>
-      <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-size:11px;color:${C.muted};text-align:center">N/D</td>
-      <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-size:11px;color:${C.muted};text-align:center">N/D</td>
-    </tr>`
-  }).join('')
-
-  const totalP1 = clients.reduce((s, c) => s + (c.zabbix?.disaster ?? 0), 0)
-  const totalP2 = clients.reduce((s, c) => s + (c.zabbix?.high ?? 0), 0)
-  const totalTickets = clients.reduce((s, c) => s + (c.glpi?.open ?? 0) + (c.jira?.open ?? 0), 0)
-  const avgScore = clients.length ? Math.round(clients.reduce((s, c) => s + (c.healthScore ?? 0), 0) / clients.length) : 0
-
-  return wrap(`
-    ${secTitle('16', 'Dashboard Executivo do Portfólio', C.orange)}
-    <div style="overflow-x:auto">
-    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;min-width:800px">
-      <tr style="background:#0A1629">
-        ${['Cliente','Farol','Score','SLA','Dispon.','P1','P2','Tickets','MTTA','Backup','DR','Renovação'].map(h =>
-          `<th style="padding:7px 10px;text-align:center;font-size:10px;color:${C.muted};text-transform:uppercase;border-bottom:1px solid ${C.border};white-space:nowrap">${h}</th>`
-        ).join('')}
-      </tr>
-      ${rows}
-    </table>
-    </div>
-    <div style="margin-top:14px;padding:14px;background:${C.deep};border-radius:8px">
-      <div style="font-size:10px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:${C.orange};margin-bottom:10px">Consolidado do Portfólio</div>
-      <table width="100%" cellpadding="0" cellspacing="0"><tr>
-        ${metric('Clientes', clients.length, C.blue)}
-        ${metric('🟢 Verde', p.healthy, C.green)}
-        ${metric('🟡 Amarelo', p.attention, C.yellow)}
-        ${metric('🔴 Vermelho', p.critical, C.red)}
-        ${metric('Score Médio', avgScore + '/100', avgScore >= 80 ? C.green : C.yellow)}
-        ${metric('Dispon. Média', p.avgAvailability + '%', p.avgAvailability >= 99.5 ? C.green : C.yellow)}
-        ${metric('P1 Ativos', totalP1, totalP1 > 0 ? C.red : C.green)}
-        ${metric('P2 Ativos', totalP2, totalP2 > 0 ? C.yellow : C.green)}
-        ${metric('Tickets', totalTickets, totalTickets > 50 ? C.yellow : C.text)}
-      </tr></table>
-      <div style="margin-top:10px;font-size:11px;color:${C.muted}">
-        MRR/ARR total, renovações 30/60/90 dias e churn risk: dados não configurados no HubSpot (propriedades customizadas pendentes).
+      <div class="sst">Backup &amp; Continuidade</div>
+      <div class="g2" style="margin-top:.25rem">
+        <div class="nd-box-gray"><div class="nd-title-gray">Backup (Veeam)</div>Jobs, sucesso/falha e retenção indisponíveis — integração pendente.</div>
+        <div class="nd-box-gray"><div class="nd-title-gray">Disaster Recovery</div>RPO, RTO e status de replicação indisponíveis — integração pendente.</div>
       </div>
+
+      <div class="sst">Service Desk — GLPI + Jira</div>
+      <table class="it"><tbody>${itRows(sdRows)}</tbody></table>
+
+      <div class="sst">Principais Riscos</div>
+      <div class="rr">${riskRows || '<span class="rt rl2">BAIXO — Nenhum risco crítico identificado</span>'}</div>
+
+      <div class="sst">Plano de Ação</div>
+      <table class="apt">
+        <thead><tr><th>Ação</th><th>Responsável</th><th>Prazo</th><th>Status</th></tr></thead>
+        <tbody>${planRows}</tbody>
+      </table>
+
+      <div class="sst">Recomendação Executiva</div>
+      <div style="background:var(--gl);border-radius:8px;padding:.9rem 1.1rem;font-size:.81rem;color:var(--navy);line-height:1.7">${cl.recommendation ?? '—'}</div>
+
     </div>
-  `, C.orange)
+  </div>
+</div>
+</div>
+<div class="div"></div>`
 }
 
 // ── Master HTML ────────────────────────────────────────────────────────────
 function buildHTML360(portfolioData: any, hsData: any): string {
   const p = portfolioData.portfolio ?? {}
-  const rawClients: any[] = portfolioData.clients ?? []
-  const dash = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
-  const gen = new Date(portfolioData.generatedAt).toLocaleString('pt-BR', {
-    timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit',
-    month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
-
-  // Re-compute farol with 360° criteria and attach
-  const clients = rawClients.map(cl => {
+  const clients = (portfolioData.clients ?? []).map((cl: any) => {
     const farol = computeFarol360(cl)
     return { ...cl, farol, farolReason: farolReason360(cl, farol) }
-  }).sort((a, b) => {
-    const o = { vermelho: 0, amarelo: 1, verde: 2 }
-    return o[a.farol as keyof typeof o] - o[b.farol as keyof typeof o]
+  }).sort((a: any, b: any) => {
+    const o: Record<string, number> = { vermelho: 0, amarelo: 1, verde: 2 }
+    return o[a.farol] - o[b.farol]
   })
 
-  // Recompute portfolio counts with new farol
-  p.healthy  = clients.filter(c => c.farol === 'verde').length
-  p.attention = clients.filter(c => c.farol === 'amarelo').length
-  p.critical  = clients.filter(c => c.farol === 'vermelho').length
+  p.healthy   = clients.filter((c: any) => c.farol === 'verde').length
+  p.attention = clients.filter((c: any) => c.farol === 'amarelo').length
+  p.critical  = clients.filter((c: any) => c.farol === 'vermelho').length
 
-  const overallFarol = p.critical > 0 ? FL.vermelho : p.attention > 0 ? FL.amarelo : FL.verde
+  const overallFarol = p.critical > 0 ? 'vermelho' : p.attention > 0 ? 'amarelo' : 'verde'
+  const overallEmoji = overallFarol === 'vermelho' ? '🔴' : overallFarol === 'amarelo' ? '🟡' : '🟢'
+  const overallLabel = overallFarol === 'vermelho' ? 'Crítico' : overallFarol === 'amarelo' ? 'Atenção' : 'Saudável'
 
-  const header = `
-<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px">
-<tr><td style="padding:24px;background:${C.cont};border-radius:12px;border:2px solid ${C.orange}">
-  <div style="text-align:center">
-    <div style="display:inline-block;background:${C.orange};color:${C.white};font-size:10px;font-weight:800;letter-spacing:2px;padding:4px 16px;border-radius:20px;margin-bottom:10px">
-      XTENTGROUP — FAROL EXECUTIVO 360°
-    </div>
-    <div style="font-size:22px;font-weight:900;color:${C.white};margin-bottom:4px">Relatório Executivo Integrado da Carteira</div>
-    <div style="font-size:12px;color:${C.muted}">${gen} · Horário de Brasília</div>
-    <div style="margin-top:16px;font-size:36px">${overallFarol.emoji}</div>
-    <div style="font-size:16px;font-weight:800;color:${overallFarol.color};margin-top:4px">
-      Portfólio ${overallFarol.label.toUpperCase()} — Score ${p.portfolioScore}/100
-    </div>
-    <div style="font-size:12px;color:${C.muted};margin-top:6px">
-      ${clients.length} clientes · ${p.healthy} 🟢 · ${p.attention} 🟡 · ${p.critical} 🔴 · Disponib. ${p.avgAvailability}%
-    </div>
-    ${bar(p.portfolioScore, overallFarol.color, 8)}
-  </div>
-</td></tr>
-</table>`
+  const gen = new Date(portfolioData.generatedAt).toLocaleDateString('pt-BR', {
+    timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+  })
+  const time = new Date(portfolioData.generatedAt).toLocaleTimeString('pt-BR', {
+    timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit',
+  })
 
-  const footer = `
-<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px">
-<tr><td style="padding:16px 20px;background:${C.cont};border-radius:8px;text-align:center;border:1px solid ${C.border}">
-  <a href="${dash}" style="display:inline-block;background:${C.orange};color:${C.white};font-size:13px;font-weight:700;padding:10px 28px;border-radius:8px;text-decoration:none">
-    Abrir Dashboard Completo →
-  </a>
-  <div style="margin-top:8px;font-size:10px;color:#4A6380">
-    Farol Executivo 360° · <strong style="color:${C.orange}">Leonardo CS Cockpit</strong> · XTENTGROUP · Gerado automaticamente às 09h00 BRT
-  </div>
-</td></tr>
-</table>`
+  const totalOpen     = clients.reduce((s: number, c: any) => s + (c.glpi?.open ?? 0) + (c.jira?.open ?? 0), 0)
+  const totalResolved = clients.reduce((s: number, c: any) => s + (c.glpi?.resolved ?? 0) + (c.jira?.done ?? 0), 0)
+  const totalHosts    = clients.reduce((s: number, c: any) => s + (c.zabbix?.hostsTotal ?? 0), 0)
+  const hostsUp       = clients.reduce((s: number, c: any) => s + (c.zabbix?.hostsUp ?? 0), 0)
+  const hostsPct      = totalHosts > 0 ? Math.round((hostsUp / totalHosts) * 100) : 100
+
+  const navLinks = clients.map((cl: any) => {
+    const anchor = cl.slug ?? cl.name.toLowerCase().replace(/\s/g, '-')
+    const em = cl.farol === 'vermelho' ? '🔴' : cl.farol === 'amarelo' ? '🟡' : '🟢'
+    return `<a href="#${anchor}">${em} ${cl.name}</a>`
+  }).join('')
+
+  const farolTableRows = clients.map((cl: any) => {
+    const avail = cl.zabbix?.availability
+    const sla   = cl.serviceMetrics?.sla ?? 'N/D'
+    const slaCl = sla === 'Em Risco' ? 'style="color:var(--red);font-weight:700"' : sla === 'Atenção' ? 'style="color:var(--yel);font-weight:700"' : 'style="color:var(--grn);font-weight:700"'
+    const ac    = cl.slug ?? cl.name.toLowerCase().replace(/\s/g, '-')
+    return `<tr>
+      <td><div class="cn"><a href="#${ac}" style="color:var(--navy);text-decoration:none">${cl.name}</a></div><div class="cs">${cl.farolReason}</div></td>
+      <td>${farolBadge(cl.farol)}</td>
+      <td ${slaCl}>${sla}</td>
+      <td ${avail != null ? `style="color:${availColor(avail)};font-weight:700"` : ''}>${avail != null ? avail + '%' : '—'}</td>
+      <td>N/D</td>
+      <td>N/D</td>
+      <td style="color:var(--g400)">⚪ N/D</td>
+      <td>N/D</td>
+      <td>${cl.zabbix?.totalProblems ?? '—'} ativos</td>
+      <td>${(cl.glpi?.open ?? 0) + (cl.jira?.open ?? 0)} abertos</td>
+    </tr>`
+  }).join('')
+
+  // Commercial data
+  const ov  = hsData?.overview ?? {}
+  const pipeline = ov.openPipeline ? 'R$ ' + ov.openPipeline.toLocaleString('pt-BR', { minimumFractionDigits: 0 }) : 'N/D'
+  const winRate  = ov.winRate != null ? ov.winRate + '%' : '—'
+
+  const roadmap = portfolioData.roadmap ?? {}
+
+  const mkRoadItem = (cls: string, num: string, cat: string, text: string) =>
+    `<div style="display:flex;gap:.65rem;margin-bottom:.8rem;align-items:flex-start">
+      <div style="width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:800;flex-shrink:0;margin-top:2px;background:${cls};color:var(--w)">${num}</div>
+      <div><div style="font-size:.7rem;color:var(--amber);font-weight:700;margin-bottom:.12rem">${cat}</div><div style="font-size:.79rem;color:var(--navy)">${text}</div></div>
+    </div>`
+
+  const road30 = (roadmap.thirtyDays ?? []).slice(0, 5).map((t: string, i: number) => mkRoadItem('#3182CE', String(i + 1), '30 dias', t)).join('')
+  const road60 = (roadmap.sixtyDays ?? []).slice(0, 5).map((t: string, i: number) => mkRoadItem('#805AD5', String(i + 1), '60 dias', t)).join('')
+  const road90 = (roadmap.ninetyDays ?? []).slice(0, 5).map((t: string, i: number) => mkRoadItem('#276749', String(i + 1), '90 dias', t)).join('')
+
+  const dash = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
   return `<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Farol Executivo 360° — XTENTGROUP</title></head>
-<body style="margin:0;padding:0;background:${C.bg};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:${C.text}">
-<table width="100%" cellpadding="0" cellspacing="0"><tr><td>
-<table width="100%" cellpadding="0" cellspacing="0" style="max-width:760px;margin:0 auto">
-<tr><td style="padding:20px">
-  ${header}
-  ${sec1_resumo(p, clients)}
-  ${sec2_farol(clients)}
-  ${sec3_disponibilidade(clients)}
-  ${sec4_continuidade()}
-  ${sec5_bancos(clients)}
-  ${sec6_kubernetes()}
-  ${sec7_infra(clients)}
-  ${sec8_servicedesk(clients)}
-  ${sec9_cs(hsData)}
-  ${sec10_comercial(hsData)}
-  ${sec11_saude(clients)}
-  ${sec12_riscos(clients)}
-  ${sec13_plano(clients)}
-  ${sec14_oportunidades(clients)}
-  ${sec15_correlacao(clients)}
-  ${sec16_dashboard(clients, p)}
-  ${footer}
-</td></tr>
-</table>
-</td></tr></table>
+<title>Farol Executivo 360° — XTENTGROUP</title>
+<style>${CSS}</style></head>
+<body>
+
+<nav>
+  <div class="nb">XTENTGROUP · Farol 360°</div>
+  <a href="#capa">Capa</a>
+  <a href="#resumo">Resumo</a>
+  <a href="#farol">Farol</a>
+  ${navLinks}
+  <a href="#consol">Consolidado</a>
+  <a href="#diretor">Diretoria</a>
+</nav>
+
+<!-- CAPA -->
+<div id="capa" class="hero">
+  <div class="hl">XTENTGROUP · Farol Executivo 360° · Gerado Automaticamente</div>
+  <h1>Status da Carteira de Clientes</h1>
+  <div class="hs">Período: ${gen} · ${time} · Fontes: Zabbix · GLPI · Jira · Datadog · HubSpot</div>
+  <div class="kpi-row">
+    <div class="kpi"><div class="v">${clients.length}</div><div class="l">Clientes</div></div>
+    <div class="kpi"><div class="v">${totalHosts}</div><div class="l">Hosts</div></div>
+    <div class="kpi"><div class="v" style="color:${hostsPct >= 99 ? '#68D391' : '#F6E05E'}">${hostsPct}%</div><div class="l">Disponib.</div></div>
+    <div class="kpi"><div class="v">${totalOpen}</div><div class="l">Tickets Abertos</div></div>
+    <div class="kpi"><div class="v">${totalResolved}</div><div class="l">Resolvidos</div></div>
+    <div class="kpi"><div class="v" style="color:${p.portfolioScore >= 80 ? '#68D391' : '#F6E05E'}">${p.portfolioScore}</div><div class="l">Score Carteira</div></div>
+    <div class="kpi"><div class="v">${pipeline}</div><div class="l">Pipeline CRM</div></div>
+    <div class="kpi"><div class="v">${winRate}</div><div class="l">Win Rate</div></div>
+  </div>
+  <div class="fps">
+    <div class="fp"><span class="dot dr"></span>${p.critical} Crítico(s)</div>
+    <div class="fp"><span class="dot dy"></span>${p.attention} Atenção</div>
+    <div class="fp"><span class="dot dg"></span>${p.healthy} Saudável(is)</div>
+    <div class="fp">${overallEmoji} Portfólio ${overallLabel}</div>
+  </div>
+</div>
+
+<!-- RESUMO -->
+<div id="resumo" class="bw"><div class="sec">
+  <div class="ey">Resumo Executivo</div>
+  <div class="st">Situação Geral da Carteira</div>
+  <div style="background:var(--g50);border-radius:12px;padding:1.25rem 1.5rem;border-left:5px solid var(--amber);font-size:.85rem;line-height:2;color:var(--navy)">
+    ${p.executiveSummary ?? '—'}
+  </div>
+</div></div>
+<div class="div"></div>
+
+<!-- FAROL -->
+<div id="farol" class="bg"><div class="sec">
+  <div class="ey">Farol Executivo</div>
+  <div class="st">Visão Consolidada — Ordenado por Criticidade</div>
+  <div class="sd">🔴 Críticos primeiro · 🟡 Atenção · 🟢 Saudáveis</div>
+  <div style="overflow-x:auto">
+  <table class="ft">
+    <thead><tr>
+      <th>Cliente</th><th>Status</th><th>SLA</th><th>Disponib.</th>
+      <th>Backup</th><th>DR</th><th>Banco XCMG</th><th>Kubernetes</th>
+      <th>Zabbix</th><th>Suporte</th>
+    </tr></thead>
+    <tbody>${farolTableRows}</tbody>
+  </table>
+  </div>
+</div></div>
+<div class="div"></div>
+
+${clients.map((cl: any) => clientSection(cl)).join('')}
+
+<!-- CONSOLIDADO -->
+<div id="consol" class="bw"><div class="sec">
+  <div class="ey">Visão Consolidada</div>
+  <div class="st">Roadmap &amp; Comercial</div>
+  <div class="g2" style="margin-bottom:2rem">
+    <div style="background:var(--w);border-radius:13px;overflow:hidden;box-shadow:0 2px 10px rgba(26,40,71,.08)">
+      <div style="padding:.9rem 1.3rem;font-weight:800;font-size:.88rem;color:var(--w);background:linear-gradient(135deg,#3182CE,#2B6CB0)">30 dias</div>
+      <div style="padding:1.1rem 1.3rem">${road30}</div>
+    </div>
+    <div style="background:var(--w);border-radius:13px;overflow:hidden;box-shadow:0 2px 10px rgba(26,40,71,.08)">
+      <div style="padding:.9rem 1.3rem;font-weight:800;font-size:.88rem;color:var(--w);background:linear-gradient(135deg,#805AD5,#6B46C1)">60 dias</div>
+      <div style="padding:1.1rem 1.3rem">${road60}</div>
+    </div>
+    <div style="background:var(--w);border-radius:13px;overflow:hidden;box-shadow:0 2px 10px rgba(26,40,71,.08)">
+      <div style="padding:.9rem 1.3rem;font-weight:800;font-size:.88rem;color:var(--w);background:linear-gradient(135deg,#276749,#22543D)">90 dias</div>
+      <div style="padding:1.1rem 1.3rem">${road90}</div>
+    </div>
+  </div>
+</div></div>
+<div class="div"></div>
+
+<!-- DIRETOR -->
+<div id="diretor" class="bw"><div class="sec">
+<div class="db">
+  <h2>Análise para Diretoria</h2>
+  <div class="dg2">
+    <div class="ds">
+      <h3>Score da Carteira</h3>
+      <p>Score médio: <strong>${p.portfolioScore}/100</strong> — ${p.portfolioScore >= 80 ? 'Carteira saudável com oportunidades de evolução' : 'Atenção requerida em clientes críticos antes de avançar novas frentes'}.</p>
+      <div style="margin-top:.75rem">
+        <div style="background:rgba(255,255,255,.15);border-radius:4px;height:8px;overflow:hidden">
+          <div style="width:${p.portfolioScore}%;height:100%;background:var(--amber);border-radius:4px"></div>
+        </div>
+        <div style="font-size:.72rem;color:rgba(255,255,255,.5);margin-top:.4rem">${p.portfolioScore}/100</div>
+      </div>
+    </div>
+    <div class="ds">
+      <h3>Principais Riscos</h3>
+      <ul>${clients.filter((c: any) => c.farol !== 'verde').slice(0, 3).map((c: any) =>
+        `<li>${c.name}: ${c.farolReason}</li>`).join('')}
+        <li>Backup Veeam — nenhum cliente integrado (risco regulatório)</li>
+        <li>Banco XCMG — integração pendente em todos os clientes</li>
+      </ul>
+    </div>
+    <div class="ds">
+      <h3>Oportunidades</h3>
+      <ul>
+        <li>Backup Gerenciado Veeam (BaaS) — todos os clientes</li>
+        <li>NOC 24x7 — clientes com score &lt;80</li>
+        <li>Integração XCMG — módulo de banco para todos</li>
+        <li>Kubernetes/RKE Gerenciado — observabilidade full-stack</li>
+        <li>Pipeline HubSpot: ${pipeline} em aberto · Win rate ${winRate}</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</div></div>
+
+<footer>
+  <p>Farol Executivo 360° · <span>Leonardo CS Cockpit · XTENTGROUP</span> · <a href="${dash}" style="color:var(--amber);text-decoration:none">Abrir Dashboard →</a></p>
+</footer>
+
 </body></html>`
 }
 
 // ── Handler ────────────────────────────────────────────────────────────────
 export async function GET(req: Request) {
-  const url = new URL(req.url)
+  const url     = new URL(req.url)
   const preview = url.searchParams.get('preview') === 'true'
 
   const [portfolioRes, hsRes] = await Promise.allSettled([
@@ -782,18 +687,16 @@ export async function GET(req: Request) {
   }
 
   const to = (process.env.NOTIFICATION_EMAIL_TO ?? process.env.SMTP_USER ?? '')
-    .split(',').map(e => e.trim()).filter(Boolean)
+    .split(',').map((e: string) => e.trim()).filter(Boolean)
 
   if (to.length === 0) {
     return NextResponse.json({ error: 'NOTIFICATION_EMAIL_TO não configurado' }, { status: 500 })
   }
 
-  const p = portfolioData.portfolio ?? {}
-  const clients: any[] = (portfolioData.clients ?? []).map((cl: any) => ({
-    ...cl, farol: computeFarol360(cl),
-  }))
-  const critical = clients.filter(c => c.farol === 'vermelho').length
-  const attention = clients.filter(c => c.farol === 'amarelo').length
+  const p       = portfolioData.portfolio ?? {}
+  const clients = (portfolioData.clients ?? []).map((cl: any) => ({ ...cl, farol: computeFarol360(cl) }))
+  const critical  = clients.filter((c: any) => c.farol === 'vermelho').length
+  const attention = clients.filter((c: any) => c.farol === 'amarelo').length
   const statusLine = critical > 0 ? `🔴 ${critical} crítico(s)` : attention > 0 ? `🟡 ${attention} em atenção` : '🟢 Carteira saudável'
   const date = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short', day: '2-digit', month: '2-digit' })
   const subject = `${statusLine} — Farol 360° ${date} · Score ${p.portfolioScore}/100`
@@ -809,7 +712,7 @@ export async function GET(req: Request) {
     portfolioScore: p.portfolioScore,
     farol: { verde: p.healthy, amarelo: p.attention, vermelho: p.critical },
     sections: 16,
-    clients: clients.map(c => ({ name: c.name, farol: c.farol, score: c.healthScore })),
+    clients: clients.map((c: any) => ({ name: c.name, farol: c.farol, score: c.healthScore })),
     generatedAt: portfolioData.generatedAt,
   })
 }
