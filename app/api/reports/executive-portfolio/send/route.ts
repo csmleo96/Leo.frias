@@ -160,7 +160,7 @@ function clientSection(cl: any): string {
 
   // Action plan
   const planHtml = (cl.actionPlan ?? []).map((a: any, i: number) => {
-    const pc = a.action.includes('P1') || a.owner?.includes('NOC') ? C.red : C.text
+    const _pc = a.action.includes('P1') || a.owner?.includes('NOC') ? C.red : C.text
     return `<tr style="background:${i % 2 === 0 ? C.deep : '#0A1629'}">
       <td style="padding:8px 10px;font-size:12px;color:${C.text};border-bottom:1px solid ${C.border}">${a.action}</td>
       <td style="padding:8px 10px;font-size:11px;color:${C.muted};border-bottom:1px solid ${C.border};white-space:nowrap">${a.owner}</td>
@@ -412,7 +412,7 @@ function roadmapSection(rm: any): string {
 function boardSummary(p: any, clients: any[]): string {
   const sc = p.portfolioScore >= 80 ? C.green : p.portfolioScore >= 60 ? C.yellow : C.red
   const critical = clients.filter(c => c.farol === 'vermelho')
-  const attention = clients.filter(c => c.farol === 'amarelo')
+  const _attention = clients.filter(c => c.farol === 'amarelo')
   const topRisks = clients.flatMap(c => (c.risks ?? []).slice(0, 2).map((r: any) => ({ ...r, client: c.name }))).slice(0, 6)
   const topOps = clients.flatMap(c => (c.opportunities ?? []).filter((o: any) => o.priority === 'alta').slice(0, 1)).slice(0, 4)
 

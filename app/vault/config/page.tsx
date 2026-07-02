@@ -81,6 +81,7 @@ export default function ConfigPage() {
     })
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [])
 
   const c = data.config

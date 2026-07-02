@@ -10,7 +10,6 @@ import {
   TrendingUp,
   AlertTriangle,
   Search,
-  Activity,
 } from 'lucide-react'
 
 type Tab = 'prospects' | 'clientes' | 'atividades'

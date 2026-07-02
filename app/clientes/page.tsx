@@ -37,6 +37,7 @@ export default function ClientesPage() {
     setClients(data ?? [])
     setLoading(false)
   }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [])
 
   const filtered = clients.filter(c => {

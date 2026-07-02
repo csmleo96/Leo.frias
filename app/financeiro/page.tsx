@@ -27,6 +27,7 @@ export default function FinanceiroPage() {
     setTransactions(data ?? [])
     setLoading(false)
   }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [])
 
   const receitas = transactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)

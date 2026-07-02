@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Mail, Send, Clock, CheckCircle2, AlertTriangle, Users, History,
   RefreshCw, Calendar, Zap, FileText, BarChart3, Plus, Trash2,
-  Settings2, ExternalLink, ChevronRight, Activity,
+  ExternalLink, ChevronRight, Activity,
 } from 'lucide-react'
 
 // ── Design tokens ─────────────────────────────────────────────────────────────

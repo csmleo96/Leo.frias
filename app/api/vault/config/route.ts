@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { withRBAC, getConfig, updateConfig, vaultLog } from '@/lib/vault'
 
 export const GET = withRBAC('config.read', async (_req) => {

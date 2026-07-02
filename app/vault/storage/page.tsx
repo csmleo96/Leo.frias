@@ -56,6 +56,7 @@ export default function StoragePage() {
     }
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [])
 
   const { usage, loading, error } = data

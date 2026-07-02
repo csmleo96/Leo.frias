@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { withRBAC, getSystemHealth, vaultLog } from '@/lib/vault'
 
 export const GET = withRBAC('monitoring.read', async (req, { role }) => {

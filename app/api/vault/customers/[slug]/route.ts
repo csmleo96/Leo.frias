@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { withRBAC, vaultLog, CUSTOMERS, CUSTOMER_SLUGS, listFiles } from '@/lib/vault'
 import type { CustomerSlug } from '@/types/vault'
 

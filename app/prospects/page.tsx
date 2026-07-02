@@ -40,6 +40,7 @@ export default function ProspectsPage() {
     setProspects((data ?? []) as unknown as Prospect[])
     setLoading(false)
   }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [])
 
   const filtered = prospects.filter(p => {
