@@ -96,8 +96,8 @@ export default function GlpiPage() {
       }))
 
       const _customerTicketsForMetrics = categorizedWithDays.filter(t => t.origin === 'CLIENTE')
-      const infraTicketsForMetrics = categorizedWithDays.filter(t => t.origin === 'INFRAESTRUTURA')
-      const dbTicketsForMetrics = categorizedWithDays.filter(t => t.origin === 'BANCO_DE_DADOS')
+      const _infraTicketsForMetrics = categorizedWithDays.filter(t => t.origin === 'INFRAESTRUTURA')
+      const _dbTicketsForMetrics = categorizedWithDays.filter(t => t.origin === 'BANCO_DE_DADOS')
       const allOperationalForMetrics = categorizedWithDays.filter(t => t.isAutomated)
 
       const execMetrics: ExecutiveMetrics = {
@@ -133,7 +133,7 @@ export default function GlpiPage() {
   const customerTickets = tickets.filter(t => t.origin === 'CLIENTE')
   const infrastructureTickets = tickets.filter(t => t.origin === 'INFRAESTRUTURA')
   const databaseTickets = tickets.filter(t => t.origin === 'BANCO_DE_DADOS')
-  const allOperationalTickets = tickets.filter(t => t.isAutomated)
+  const _allOperationalTickets = tickets.filter(t => t.isAutomated)
 
   // Top clientes
   const topCustomers = tickets.reduce((acc: Record<string, number>, t) => {

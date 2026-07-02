@@ -34,8 +34,7 @@ export default function DealsPage() {
   const [selectedPipeline, setSelectedPipeline] = useState('')
   const [selectedStage, setSelectedStage] = useState('')
   const [showWon, setShowWon] = useState<'all' | 'open' | 'won' | 'lost'>('open')
-  const [after, setAfter] = useState<string | null>(null)
-  const [history, setHistory] = useState<string[]>([])
+  const [after, _setAfter] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['hubspot-deals', selectedPipeline, selectedStage, after],

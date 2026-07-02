@@ -56,7 +56,7 @@ export default function HubSpotDashboard() {
     queryFn: () => fetch('/api/hubspot/auth/status').then(r => r.json()),
   })
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['hubspot-dashboard'],
     queryFn: () => fetch('/api/hubspot/dashboard').then(r => r.json()),
     enabled: status?.connected === true,

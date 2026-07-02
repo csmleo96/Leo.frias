@@ -40,7 +40,7 @@ export default function ContactsPage() {
     return () => clearTimeout(t)
   }, [])
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['hubspot-contacts', debouncedSearch, after],
     queryFn: () => {
       const qs = new URLSearchParams({ limit: '50', ...(debouncedSearch ? { search: debouncedSearch } : {}), ...(after ? { after } : {}) })
