@@ -15,7 +15,7 @@ async function getRecipients(): Promise<string[]> {
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   const recipients = await getRecipients()
   const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
   const res = await fetch(`${base}/api/automation/reports/send`, {

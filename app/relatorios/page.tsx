@@ -266,7 +266,7 @@ export default function RelatoriosPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(143,191,194,0.05)" />
                     <XAxis dataKey="name" tick={{ fill: MUTED, fontSize: 9 }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fill: MUTED, fontSize: 9 }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
+                    <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: unknown) => `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
                     <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, color: MUTED }} />
                     <Bar dataKey="receita" fill="#7dd3a8" radius={[4, 4, 0, 0]} />
                     <Bar dataKey="despesa" fill="#f87171" radius={[4, 4, 0, 0]} />

@@ -552,7 +552,7 @@ export default function IaPage() {
                     Configure o Windows Task Scheduler para chamar:
                   </p>
                   <p className="text-[10px] font-mono mt-1 px-2 py-1 rounded" style={{ background: 'rgba(0,0,0,0.3)', color: '#7dd3a8' }}>
-                    curl -X POST http://localhost:3000/api/notifications/email -H "Content-Type: application/json" -d @report.json
+                    {'curl -X POST http://localhost:3000/api/notifications/email -H "Content-Type: application/json" -d @report.json'}
                   </p>
                 </div>
               </div>

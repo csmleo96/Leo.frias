@@ -30,9 +30,9 @@ export interface Database {
         Relationships: []
       }
       prospects: {
-        Row: { id: string; name: string; email: string | null; phone: string | null; company: string | null; status: string; notes: string | null; created_at: string }
-        Insert: { id?: string; name: string; email?: string | null; phone?: string | null; company?: string | null; status?: string; notes?: string | null; created_at?: string }
-        Update: { id?: string; name?: string; email?: string | null; phone?: string | null; company?: string | null; status?: string; notes?: string | null }
+        Row: { id: string; name: string; email: string | null; phone: string | null; company: string | null; status: string; stage: string | null; value: number | null; notes: string | null; created_at: string }
+        Insert: { id?: string; name: string; email?: string | null; phone?: string | null; company?: string | null; status?: string; stage?: string | null; value?: number | null; notes?: string | null; created_at?: string }
+        Update: { id?: string; name?: string; email?: string | null; phone?: string | null; company?: string | null; status?: string; stage?: string | null; value?: number | null; notes?: string | null }
         Relationships: []
       }
       audit_log: {

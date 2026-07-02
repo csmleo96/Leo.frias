@@ -226,7 +226,7 @@ export default function ScheduledReportsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {logs.map((log) => (
+              {logs.map((log: any) => (
                 <div key={log.id} className="log-row rounded-lg" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
                   <button
                     onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id)}

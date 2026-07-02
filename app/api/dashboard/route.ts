@@ -20,13 +20,13 @@ export async function GET() {
   const glpiData = glpiRes || {}
   const jiraData = jiraRes || {}
   const zabbixData = zabbixRes || {}
-  const operacoesData = operacoesSyncRes || []
+  const _operacoesData = operacoesSyncRes || []
 
   // Extract stats
-  const glpiStats = glpiData.stats || {}
-  const jiraIssues = jiraData.issues || []
+  const _glpiStats = glpiData.stats || {}
+  const _jiraIssues = jiraData.issues || []
   const zabbixStats = zabbixData.stats || {}
-  const zabbixProblems = zabbixData.problems || []
+  const _zabbixProblems = zabbixData.problems || []
   const hubspotOverview = hubspotData.overview || {}
 
   // Get Supabase ticket data
@@ -149,7 +149,7 @@ export async function GET() {
   // Today's metrics
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const todayStart = today.toISOString()
+  const _todayStart = today.toISOString()
 
   const resolvedToday = allTickets.filter(t => {
     const updated = new Date(t.updated_at || '')

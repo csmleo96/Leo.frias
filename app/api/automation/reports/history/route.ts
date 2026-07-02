@@ -15,7 +15,7 @@ export async function GET() {
     if (error) throw error
 
     return NextResponse.json({ logs: data ?? [] })
-  } catch (err: any) {
+  } catch {
     // notification_logs table may not exist — return empty
     return NextResponse.json({ logs: [] })
   }

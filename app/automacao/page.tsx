@@ -341,7 +341,7 @@ function HistoryView() {
           <div style={{ padding: 40, textAlign: 'center' }}>
             <History size={32} style={{ color: T, opacity: 0.3, margin: '0 auto 10px', display: 'block' }} />
             <p style={{ fontSize: 13, color: MUTED }}>Nenhum relatório enviado ainda.</p>
-            <p style={{ fontSize: 11, color: MUTED, marginTop: 4 }}>Use "Enviar Agora" em qualquer aba de relatório.</p>
+            <p style={{ fontSize: 11, color: MUTED, marginTop: 4 }}>Use &quot;Enviar Agora&quot; em qualquer aba de relatório.</p>
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>

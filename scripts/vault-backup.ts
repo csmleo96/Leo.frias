@@ -5,7 +5,7 @@
  * Or via N8N HTTP webhook: POST /api/vault/backups/run
  */
 
-import { createReadStream, createWriteStream, readdirSync, statSync, existsSync, mkdirSync } from 'fs'
+import { createReadStream, createWriteStream, readdirSync, statSync, existsSync, mkdirSync, readFileSync } from 'fs'
 import { join, relative } from 'path'
 import { createGzip } from 'zlib'
 import { pipeline } from 'stream/promises'
@@ -95,7 +95,7 @@ async function runBackup(frequency: Frequency): Promise<void> {
       createdAt: new Date().toISOString(),
       config:    JSON.parse(
         existsSync(join(VAULT_ROOT, 'config', 'vault.config.json'))
-          ? require('fs').readFileSync(join(VAULT_ROOT, 'config', 'vault.config.json'), 'utf-8')
+          ? readFileSync(join(VAULT_ROOT, 'config', 'vault.config.json'), 'utf-8')
           : '{}'
       ),
     }

@@ -14,11 +14,11 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const limit = Number(searchParams.get('limit') ?? 100)
   const level = searchParams.get('level')
-  const module = searchParams.get('module')
+  const moduleFilter = searchParams.get('module')
 
   let q = sb().from('audit_log').select('*').order('created_at', { ascending: false }).limit(limit)
   if (level) q = q.eq('level', level)
-  if (module) q = q.eq('module', module)
+  if (moduleFilter) q = q.eq('module', moduleFilter)
 
   const { data, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

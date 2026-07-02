@@ -15,13 +15,13 @@ const MUTED = 'rgba(243,250,250,0.45)'
 const H = { fontFamily: 'var(--font-heading), "Space Grotesk", sans-serif' }
 
 // ── Skeleton ───────────────────────────────────────────────────────────────
-const Sk = memo(({ w = '100%', h = '16px', r = '6px' }: any) => (
+const Sk = memo(function Sk({ w = '100%', h = '16px', r = '6px' }: { w?: string; h?: string; r?: string }) { return (
   <div style={{
     width: w, height: h, borderRadius: r,
     background: 'linear-gradient(90deg, rgba(143,191,194,0.06) 25%, rgba(143,191,194,0.12) 50%, rgba(143,191,194,0.06) 75%)',
     backgroundSize: '200% 100%', animation: 'shimmer 1.6s infinite',
   }} />
-))
+) })
 
 // ── Stat Card ──────────────────────────────────────────────────────────────
 const StatCard = memo(function StatCard({ label, value, color, icon: Icon }: any) {
@@ -80,7 +80,7 @@ const LogRow = memo(function LogRow({ log, onResend }: any) {
       {/* Channels */}
       {channels.length > 0 && (
         <div className="flex items-center gap-2 mb-3">
-          {channels.map(ch => (
+          {channels.map((ch: string) => (
             <div key={ch} className="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold"
               style={{ background: 'rgba(0,0,0,0.3)', border: `1px solid ${BORDER}` }}>
               {ch === 'email' ? <Mail size={10} /> : <MessageSquare size={10} />}

@@ -26,6 +26,7 @@ interface Ticket {
   categoryId: number
   groupId: number
   isAutomated: boolean
+  isMonitored?: boolean
   daysOpen?: number
 }
 
@@ -247,7 +248,7 @@ export default function GlpiPage() {
                 { label: 'Abertos', count: customerTickets.filter(t => t.status === 1).length, color: '#fbbf24' },
                 { label: 'Em Atendimento', count: customerTickets.filter(t => t.status === 2).length, color: T },
                 { label: 'Pendentes', count: customerTickets.filter(t => t.status === 4).length, color: '#fb923c' },
-                { label: 'Vencidos (SLA)', count: customerTickets.filter(t => t.daysOpen > 7).length, color: '#f87171' },
+                { label: 'Vencidos (SLA)', count: customerTickets.filter(t => (t.daysOpen ?? 0) > 7).length, color: '#f87171' },
               ].map(({ label, count, color }) => (
                 <div key={label} className="rounded-xl p-6" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
                   <p className="text-xs font-semibold uppercase" style={{ color: MUTED, letterSpacing: '0.08em' }}>

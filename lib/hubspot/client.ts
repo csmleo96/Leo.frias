@@ -312,7 +312,7 @@ export async function syncObject(
   else props = TICKET_PROPS
 
   // Build stage labels map for deals
-  let stageLabels: Record<string, string> = {}
+  const stageLabels: Record<string, string> = {}
   if (objectType === 'deals') {
     try {
       const pipelines = await getDealPipelines()
