@@ -14,7 +14,7 @@ const CARD = '#0d1a1e'
 const heading = { fontFamily: 'var(--font-heading), "Space Grotesk", sans-serif' }
 
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
-function timeAgo(iso: string) {
+function _timeAgo(iso: string) {
   const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
   return d === 0 ? 'hoje' : d === 1 ? 'ontem' : d < 7 ? `${d}d atrás` : `${Math.floor(d / 7)}sem atrás`
 }
@@ -43,6 +43,7 @@ export default function PainelPage() {
   const [jiraIssues, setJiraIssues] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     async function load() {
       const [txRes, prRes, tkRes, jiraRes] = await Promise.allSettled([

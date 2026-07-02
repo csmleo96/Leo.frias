@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Download, RefreshCw, FileText, TrendingUp, Loader2, AlertCircle } from 'lucide-react'
+import { Download, RefreshCw, Loader2, AlertCircle } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend, AreaChart, Area, CartesianGrid,
+  PieChart, Pie, Cell, Legend, Area, CartesianGrid,
 } from 'recharts'
 import * as XLSX from 'xlsx'
 

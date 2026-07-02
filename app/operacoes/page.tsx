@@ -530,7 +530,7 @@ export default function OperacoesPage() {
     staleTime: 2 * 60 * 1000,
   })
 
-  const loading = glpiLoading || jiraLoading
+  const _loading = glpiLoading || jiraLoading
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'executivo', label: 'Visão Executiva' },

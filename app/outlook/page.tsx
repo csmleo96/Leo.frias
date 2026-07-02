@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Mail, RefreshCw, Send, Reply, ArrowRight, Loader2, AlertCircle, Search, ExternalLink, Check } from 'lucide-react'
+import { Mail, RefreshCw, Send, Loader2, AlertCircle, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 
 const T = '#8fbfc2'
