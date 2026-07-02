@@ -213,6 +213,19 @@ function buildHTML(data: any): string {
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const preview = url.searchParams.get('preview') === 'true'
+  const debug = url.searchParams.get('debug') === 'true'
+
+  if (debug) {
+    return NextResponse.json({
+      SMTP_HOST:    !!process.env.SMTP_HOST,
+      SMTP_PORT:    !!process.env.SMTP_PORT,
+      SMTP_USER:    !!process.env.SMTP_USER,
+      SMTP_PASS:    !!process.env.SMTP_PASS,
+      NOTIFICATION_EMAIL_TO: !!process.env.NOTIFICATION_EMAIL_TO,
+      RESEND_API_KEY: !!process.env.RESEND_API_KEY,
+      MICROSOFT_CLIENT_ID: !!process.env.MICROSOFT_CLIENT_ID,
+    })
+  }
 
   const res = await fetch(`${BASE()}/api/reports/executive-portfolio`, { cache: 'no-store' })
   if (!res.ok) {
