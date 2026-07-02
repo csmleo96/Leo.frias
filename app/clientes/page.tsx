@@ -22,8 +22,9 @@ const avatarPalette = [
   { bg: 'oklch(0.7 0.2 340 / 15%)', color: 'oklch(0.7 0.2 340)', border: 'oklch(0.7 0.2 340 / 30%)' },
 ]
 
+const supabase = createClient()
+
 export default function ClientesPage() {
-  const supabase = createClient()
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')

@@ -25,8 +25,9 @@ const heading = { fontFamily: 'var(--font-heading), "Space Grotesk", sans-serif'
 
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
 
+const supabase = createClient()
+
 export default function ProspectsPage() {
-  const supabase = createClient()
   const [prospects, setProspects] = useState<Prospect[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')

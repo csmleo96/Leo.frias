@@ -98,7 +98,7 @@ export default function StoragePage() {
             <span className="text-2xl font-bold text-white">{formatBytes(totalBytes)}</span>
           </div>
           <div className="h-3 w-full bg-white/10 rounded-full overflow-hidden flex">
-            {Object.entries(dirs).map(([dir, bytes], i) => {
+            {Object.entries(dirs).map(([dir, bytes], _i) => {
               const pct = totalBytes > 0 ? (bytes / totalBytes) * 100 : 0
               const color = DIR_COLORS[dir] ?? '#6B7280'
               return pct > 0.5 ? (

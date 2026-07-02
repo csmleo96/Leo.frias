@@ -5,73 +5,16 @@
  * Or via N8N HTTP webhook: POST /api/vault/backups/run
  */
 
-import { readdirSync, statSync, existsSync, mkdirSync, readFileSync } from 'fs'
-import { join, relative } from 'path'
+import { existsSync, mkdirSync, readFileSync, statSync } from 'fs'
+import { join } from 'path'
 import { randomUUID } from 'crypto'
 
 type Frequency = 'daily' | 'weekly' | 'monthly'
 
 const VAULT_ROOT = join(process.cwd(), 'vault')
-const RETENTION_DAYS: Record<Frequency, number> = {
-  daily:   30,
-  weekly:  90,
-  monthly: 365,
-}
-
-const EXCLUDE_DIRS = ['secrets', 'temp']
-
-function dateStamp(): string {
-  return new Date().toISOString().slice(0, 10)
-}
 
 function timeStamp(): string {
   return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-}
-
-async function createTarGz(sourceDir: string, destFile: string): Promise<number> {
-  // Simple file-by-file compression (no native tar — cross-platform)
-  const { createWriteStream: cws } = await import('fs')
-  const { createGzip: cg } = await import('zlib')
-  const gz = cg({ level: 6 })
-  const out = cws(destFile)
-
-  let totalSize = 0
-  const files: string[] = []
-
-  function walkDir(dir: string) {
-    if (!existsSync(dir)) return
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name)
-      const rel  = relative(sourceDir, full)
-      if (EXCLUDE_DIRS.some(ex => rel.startsWith(ex))) continue
-      if (entry.isDirectory()) walkDir(full)
-      else files.push(full)
-    }
-  }
-  walkDir(sourceDir)
-
-  // Write manifest header
-  const manifest = JSON.stringify({
-    createdAt:  new Date().toISOString(),
-    fileCount:  files.length,
-    sourceDir,
-  }) + '\n---\n'
-
-  gz.pipe(out)
-  gz.write(manifest)
-
-  for (const f of files) {
-    const stat = statSync(f)
-    totalSize += stat.size
-    const rel = relative(sourceDir, f)
-    gz.write(`\n=== FILE: ${rel} (${stat.size} bytes) ===\n`)
-    const content = (() => { try { return readFileSync(f, 'utf-8') } catch { return '' } })()
-    gz.write(String(content))
-  }
-
-  gz.end()
-  await new Promise<void>((res, rej) => out.on('finish', () => res()).on('error', rej))
-  return totalSize
 }
 
 async function runBackup(frequency: Frequency): Promise<void> {

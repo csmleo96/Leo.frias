@@ -35,8 +35,9 @@ function statusColor(s: string) {
 const stageLabel: Record<string, string> = { lead: 'Lead', contato: 'Contato', proposta: 'Proposta', negociacao: 'Negociação', fechado: 'Fechado', perdido: 'Perdido' }
 const stageColor: Record<string, string> = { lead: '#94a3b8', contato: T, proposta: '#fbbf24', negociacao: '#fb923c', fechado: '#7dd3a8', perdido: '#f87171' }
 
+const supabase = createClient()
+
 export default function PainelPage() {
-  const supabase = createClient()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [prospects, setProspects] = useState<any[]>([])
   const [tasks, setTasks] = useState<any[]>([])

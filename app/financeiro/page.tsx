@@ -13,8 +13,9 @@ function fmt(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+const supabase = createClient()
+
 export default function FinanceiroPage() {
-  const supabase = createClient()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<TransactionType | 'todas'>('todas')

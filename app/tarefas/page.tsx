@@ -32,8 +32,9 @@ function StatCard({ count, label, icon: Icon, iconClass }: { count: number; labe
   )
 }
 
+const supabase = createClient()
+
 export default function TarefasPage() {
-  const supabase = createClient()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<TaskStatus | 'todas'>('todas')
