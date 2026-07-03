@@ -195,11 +195,6 @@ nav a:hover{color:var(--accent);opacity:1;}
 .fc-r{background:rgba(248,113,113,.08);border-left:3px solid var(--red);}
 .fc-title{font-weight:700;margin-bottom:.3rem;}
 
-/* ── XCMG wrap ── */
-.xcmg-wrap{background:rgba(110,162,168,.05);border:1px solid rgba(110,162,168,.18);border-radius:var(--radius-inner);padding:1.2rem 1.4rem;margin-top:.5rem;}
-.xcmg-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;padding-bottom:.85rem;border-bottom:1px solid rgba(110,162,168,.15);}
-.xcmg-title{font-size:.92rem;font-weight:700;color:var(--near-w);font-family:'Space Grotesk',system-ui,sans-serif;}
-
 /* ── Director box ── */
 .db{background:radial-gradient(ellipse at top left,rgba(110,162,168,.12),transparent 60%),linear-gradient(135deg,var(--bg2),var(--bg3));border:1px solid rgba(110,162,168,.2);border-radius:var(--radius-card);padding:2.75rem;color:var(--near-w);box-shadow:var(--glow-md);}
 .db h2{color:var(--accent);font-family:'Space Grotesk',system-ui,sans-serif;font-size:1.35rem;font-weight:700;margin-bottom:1.5rem;letter-spacing:-.01em;}
