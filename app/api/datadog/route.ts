@@ -13,10 +13,18 @@ function ddHeaders() {
   }
 }
 
+// JSON.parse() silently truncates integers > Number.MAX_SAFE_INTEGER (2^53−1).
+// Datadog event IDs are 64-bit and always exceed that limit.
+// We fetch as text and stringify any "id" field with 16+ digits BEFORE parsing.
+function safeParseDDJson(text: string): unknown {
+  return JSON.parse(text.replace(/"id"\s*:\s*(\d{16,})/g, '"id":"$1"'))
+}
+
 async function ddFetch(path: string) {
   const res = await fetch(`${DD_BASE()}${path}`, { headers: ddHeaders(), cache: 'no-store' })
   if (!res.ok) throw new Error(`Datadog ${path}: HTTP ${res.status}`)
-  return res.json()
+  const text = await res.text()
+  return safeParseDDJson(text)
 }
 
 export async function GET(_req: NextRequest) {
@@ -37,22 +45,22 @@ export async function GET(_req: NextRequest) {
       ddFetch(`/api/v1/events?start=${Math.floor(Date.now() / 1000) - 86400}&end=${Math.floor(Date.now() / 1000)}&priority=all&page=0&count=50`),
     ])
 
-    // ── Normalize monitors ──────────────────────────────────────────────────
+    // ── Normalize monitors — id as string (defensive against future large ints)
     const monitors = (monitorsRaw as any[]).map((m: any) => ({
-      id:       m.id,
+      id:       String(m.id),
       name:     m.name,
       type:     m.type,
       status:   m.overall_state,
-      tags:     m.tags ?? [],
+      tags:     [...new Set<string>(m.tags ?? [])], // deduplicate tags
       message:  m.message ?? '',
       creator:  m.creator?.email ?? '—',
       created:  m.created,
       modified: m.modified,
     }))
 
-    // ── Normalize hosts ─────────────────────────────────────────────────────
+    // ── Normalize hosts — id as string
     const hosts = ((hostsRaw as any).host_list ?? []).map((h: any) => ({
-      id:      h.id,
+      id:      String(h.id),
       name:    h.name,
       aliases: h.aliases ?? [],
       apps:    h.apps ?? [],
@@ -62,16 +70,20 @@ export async function GET(_req: NextRequest) {
       lastReported: h.last_reported_time,
     }))
 
-    // ── Normalize events ────────────────────────────────────────────────────
-    const events = ((eventsRaw as any).events ?? []).slice(0, 30).map((e: any) => ({
-      id:       e.id,
-      title:    e.title,
-      text:     e.text,
-      priority: e.priority,
+    // ── Normalize events — id preserved as string via safeParseDDJson above.
+    // Deduplicate by id: Datadog v1 events endpoint may return the same event
+    // across pages, and ids that were distinct but close in value collapse to
+    // the same float64 when parsed naively (Number.MAX_SAFE_INTEGER overflow).
+    const rawEvents = ((eventsRaw as any).events ?? []).map((e: any) => ({
+      id:        String(e.id),
+      title:     e.title,
+      text:      e.text,
+      priority:  e.priority,
       alertType: e.alert_type,
-      tags:     e.tags ?? [],
-      time:     e.date_happened,
+      tags:      [...new Set<string>(e.tags ?? [])], // deduplicate tags
+      time:      e.date_happened,
     }))
+    const events = Array.from(new Map(rawEvents.map((e: any) => [e.id, e])).values()).slice(0, 30)
 
     // ── Monitor summary ─────────────────────────────────────────────────────
     const summary = {

@@ -35,16 +35,16 @@ const ALERT_TYPE_COLOR: Record<string, string> = {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Monitor {
-  id: number; name: string; type: string; status: string
+  id: string; name: string; type: string; status: string
   tags: string[]; creator: string; created: string; modified: string
 }
 
 interface Host {
-  id: number; name: string; status: string; muted: boolean; lastReported: number
+  id: string; name: string; status: string; muted: boolean; lastReported: number
 }
 
 interface DDEvent {
-  id: number; title: string; alertType: string; priority: string
+  id: string; title: string; alertType: string; priority: string
   tags: string[]; time: number
 }
 
