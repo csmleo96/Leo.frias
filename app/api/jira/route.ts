@@ -12,6 +12,10 @@ const JIRA_FIELDS = [
 const MAX_RESULTS  = 100  // Jira Cloud hard limit per page
 const MAX_PAGES    = 3    // Fetch up to 300 issues total
 
+// POST /rest/api/3/search/jql uses cursor-based pagination (nextPageToken).
+// GET  /rest/api/3/search   uses offset-based (startAt) — still available as fallback.
+// POST /rest/api/3/search   is 410 Gone in recent Jira Cloud.
+
 function normalizeIssue(i: any, BASE: string, now: number) {
   const sprintArr    = i.fields.customfield_10014
   const activeSprint = Array.isArray(sprintArr)
@@ -90,13 +94,20 @@ export async function GET(request: NextRequest) {
     const allIssues: ReturnType<typeof normalizeIssue>[] = []
     let jiraTotal = 0
 
-    // Paginate: Jira Cloud caps maxResults at 100 per request
+    // POST /rest/api/3/search/jql — cursor-based (nextPageToken), replaces deprecated endpoints
+    let nextPageToken: string | undefined = undefined
     for (let page = 0; page < MAX_PAGES; page++) {
-      const startAt = page * MAX_RESULTS
+      const body: Record<string, unknown> = {
+        jql,
+        maxResults: MAX_RESULTS,
+        fields: JIRA_FIELDS,
+        ...(nextPageToken ? { nextPageToken } : {}),
+      }
+
       const res = await fetch(`${BASE}/rest/api/3/search/jql`, {
         method: 'POST',
         headers: { Authorization: auth, Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jql, maxResults: MAX_RESULTS, startAt, fields: JIRA_FIELDS }),
+        body: JSON.stringify(body),
         cache: 'no-store',
       })
 
@@ -107,13 +118,13 @@ export async function GET(request: NextRequest) {
       }
 
       const data = await res.json()
-      jiraTotal = data.total ?? 0
+      // /search/jql does not return `total`; accumulate from fetched pages
       const pageIssues = (data.issues ?? []).map((i: any) => normalizeIssue(i, BASE, now))
       allIssues.push(...pageIssues)
 
-      // Stop if this page returned fewer than MAX_RESULTS (last page)
-      if (pageIssues.length < MAX_RESULTS) break
-      // Stop if we've already fetched everything
+      // Stop when there is no cursor for the next page (last page)
+      nextPageToken = data.nextPageToken ?? undefined
+      if (!nextPageToken) break
       if (allIssues.length >= jiraTotal) break
     }
 
@@ -142,10 +153,11 @@ export async function GET(request: NextRequest) {
       ? Math.round((resolvedOnTime.length / withDue.length) * 100)
       : null
 
+    jiraTotal = allIssues.length
     return NextResponse.json({
       total:          jiraTotal,
       fetched:        allIssues.length,
-      truncated:      allIssues.length < jiraTotal,
+      truncated:      !!nextPageToken, // true if there are more pages not fetched
       issues:         allIssues,
       summary: {
         open:           open.length,

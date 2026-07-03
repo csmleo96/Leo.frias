@@ -25,7 +25,7 @@ export const CLIENTS: Record<string, ClientConfig> = {
     glpiGroupIds: [],                  // fill in after checking groupId in GLPI tickets
     glpiTitleKeywords: ['connectpsp', 'connect psp'],
     jiraProjectKeys: ['HV'],           // adjust to actual Jira project key for ConnectPSP
-    zabbixHostKeywords: ['connectpsp'],
+    zabbixHostKeywords: ['connectpsp', 'cpsp'],
     datadogTags: ['client:connectpsp'],
     contacts: [],
     accentColor: '#3B82F6',
@@ -47,7 +47,7 @@ export const CLIENTS: Record<string, ClientConfig> = {
     glpiGroupIds: [],
     glpiTitleKeywords: ['hospital abc', 'hospitalabc', 'habc'],
     jiraProjectKeys: ['MSPINFRA'],     // adjust to actual Jira project key
-    zabbixHostKeywords: ['hospital', 'habc'],
+    zabbixHostKeywords: ['hospital', 'habc', 'abc-v', 'mv-abc'],
     datadogTags: ['client:hospitalabc'],
     contacts: [],
     accentColor: '#8B5CF6',

@@ -64,10 +64,10 @@ export async function GET() {
     const ts7d   = nowSec - 7  * 86400
     const ts30d  = nowSec - 30 * 86400
 
-    // Phase 1 — critical data: problems, hosts, triggers
+    // Phase 1 — problems and hosts in parallel
     // NOTE: omit `recent:true` so we get ALL active problems regardless of age.
-    // r_eventid already identifies recovered problems; we filter those out below.
-    const [problems, hosts, triggers] = await Promise.all([
+    // r_eventid "0" means no recovery event (active); any other value means resolved.
+    const [problems, hosts] = await Promise.all([
       zbxRequest('problem.get', {
         output: ['eventid', 'objectid', 'name', 'severity', 'clock', 'acknowledged', 'r_eventid'],
         suppressed: false,
@@ -80,14 +80,20 @@ export async function GET() {
         monitored_hosts: true,
         limit: 500,
       }, auth),
-      zbxRequest('trigger.get', {
-        output: ['triggerid', 'description', 'priority'],
-        selectHosts: 'extend',
-        only_true: true,
-        filter: { value: 1 },
-        limit: 200,
-      }, auth),
     ])
+
+    // Fetch triggers by the exact triggerids from our problems (more reliable than only_true)
+    const triggerIds = [...new Set((problems as any[]).map(p => p.objectid).filter(Boolean))]
+    let triggers: any[] = []
+    if (triggerIds.length > 0) {
+      try {
+        triggers = await zbxRequest('trigger.get', {
+          output: ['triggerid', 'description', 'priority'],
+          selectHosts: ['hostid', 'name'],
+          triggerids: triggerIds,
+        }, auth)
+      } catch { /* non-critical — host names will show as '—' */ }
+    }
 
     // Phase 2 — trend data (best-effort; won't fail the request if unavailable)
     let trend7dCount  = 0
@@ -131,7 +137,7 @@ export async function GET() {
       clock:          p.clock,
       age:            formatAge(Number(p.clock)),
       acknowledged:   p.acknowledged === '1',
-      resolved:       !!p.r_eventid,
+      resolved:       !!p.r_eventid && p.r_eventid !== '0',
       host:           trigHostMap[p.objectid] ?? '—',
     }))
 
