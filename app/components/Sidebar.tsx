@@ -56,6 +56,7 @@ const VAULT_NAV: NavGroup = {
 }
 
 const CUSTOMER_NAV: NavItem[] = [
+  { href: '/vault/customers/xcmg',         label: 'Banco XCMG',   icon: FolderOpen },
   { href: '/vault/customers/connectpsp',   label: 'ConnectPSP',   icon: FolderOpen },
   { href: '/vault/customers/csce',         label: 'CSCE',         icon: FolderOpen },
   { href: '/vault/customers/hospitalabc',  label: 'Hospital ABC', icon: FolderOpen },

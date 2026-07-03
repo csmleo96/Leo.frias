@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CUSTOMERS, CUSTOMER_SLUGS } from '@/lib/vault/constants'
 
 const CUSTOMER_META: Record<string, { color: string; status: string; reports: number; incidents: number }> = {
+  xcmg:         { color: '#F59E0B', status: 'Atenção',  reports: 0,  incidents: 0 },
   connectpsp:   { color: '#3B82F6', status: 'Atenção',  reports: 12, incidents: 3 },
   csce:         { color: '#10B981', status: 'Saudável', reports: 8,  incidents: 0 },
   hospitalabc:  { color: '#F59E0B', status: 'Crítico',  reports: 15, incidents: 5 },

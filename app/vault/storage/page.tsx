@@ -13,9 +13,10 @@ interface StorageData {
 }
 
 const DIR_COLORS: Record<string, string> = {
+  'customers/xcmg':         '#F59E0B',
   'customers/connectpsp':   '#3B82F6',
   'customers/csce':         '#10B981',
-  'customers/hospitalabc':  '#F59E0B',
+  'customers/hospitalabc':  '#D97706',
   'customers/ticketsports': '#8B5CF6',
   'customers/lotus':        '#EC4899',
   'reports':     '#06B6D4',

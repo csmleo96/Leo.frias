@@ -35,6 +35,7 @@ export interface VaultUser {
 // ── CUSTOMERS ────────────────────────────────────────────────────────────────
 
 export type CustomerSlug =
+  | 'xcmg'
   | 'connectpsp'
   | 'csce'
   | 'hospitalabc'

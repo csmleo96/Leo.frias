@@ -67,11 +67,12 @@ export const ROLE_LABELS: Record<VaultRole, string> = {
 // ── Customers ─────────────────────────────────────────────────────────────────
 
 export const CUSTOMERS: Record<CustomerSlug, { name: string; segment: string }> = {
-  connectpsp:   { name: 'ConnectPSP',    segment: 'Fintech · Payment Service Provider' },
-  csce:         { name: 'CSCE',          segment: 'Financial · SQL · Storage' },
-  hospitalabc:  { name: 'Hospital ABC',  segment: 'Healthcare · Migração S3·MinIO' },
-  ticketsports: { name: 'Ticket Sports', segment: 'SaaS · SQL · Email' },
-  lotus:        { name: 'Lotus',         segment: 'Technology · MSP' },
+  xcmg:         { name: 'Banco XCMG',   segment: 'Banking · SQL Server · Alta Disponibilidade' },
+  connectpsp:   { name: 'ConnectPSP',   segment: 'Fintech · Payment Service Provider' },
+  csce:         { name: 'CSCE',         segment: 'Financial · SQL · Storage' },
+  hospitalabc:  { name: 'Hospital ABC', segment: 'Healthcare · Migração S3·MinIO' },
+  ticketsports: { name: 'Ticket Sports',segment: 'SaaS · SQL · Email' },
+  lotus:        { name: 'Lotus',        segment: 'Technology · MSP' },
 }
 
 export const CUSTOMER_SLUGS = Object.keys(CUSTOMERS) as CustomerSlug[]

@@ -19,6 +19,17 @@ export interface ClientConfig {
 }
 
 export const CLIENTS: Record<string, ClientConfig> = {
+  xcmg: {
+    slug: 'xcmg',
+    name: 'Banco XCMG',
+    glpiGroupIds: [],                   // configurar após mapear groupId nos tickets GLPI
+    glpiTitleKeywords: ['xcmg'],
+    jiraProjectKeys: [],                // configurar após identificar projeto Jira do XCMG
+    zabbixHostKeywords: ['xcmg'],       // cobre: veeam-xcmg, DR-XCMG e demais hosts xcmg-*
+    datadogTags: ['client:xcmg'],
+    contacts: [],
+    accentColor: '#F59E0B',
+  },
   connectpsp: {
     slug: 'connectpsp',
     name: 'ConnectPSP',

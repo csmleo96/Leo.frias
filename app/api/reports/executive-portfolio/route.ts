@@ -1,15 +1,11 @@
 import { NextResponse } from 'next/server'
+import { CLIENTS } from '@/lib/reports/clients'
 
 export const dynamic = 'force-dynamic'
 
-const SLUGS = ['connectpsp', 'csce', 'hospitalabc', 'ticketsports', 'lotus']
-const NAMES: Record<string, string> = {
-  connectpsp:   'ConnectPSP',
-  csce:         'CSCE',
-  hospitalabc:  'Hospital ABC',
-  ticketsports: 'Ticket Sports',
-  lotus:        'Lotus',
-}
+// Single source of truth: lib/reports/clients.ts
+// To add a new client, register it there — no code changes needed here.
+const SLUGS = Object.keys(CLIENTS)
 
 async function safeGet(url: string) {
   try {
@@ -185,7 +181,7 @@ export async function GET() {
 
   const clients = rawClients.map((cr, i) => {
     const slug = SLUGS[i]
-    const name = NAMES[slug]
+    const name = CLIENTS[slug]?.name ?? slug
 
     if (!cr) {
       return {
