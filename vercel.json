@@ -1,12 +1,14 @@
 {
   "crons": [
-    { "path": "/api/notifications/farol",              "schedule": "0 12 * * *"  },
-    { "path": "/api/reports/executive-portfolio/send", "schedule": "45 11 * * *" },
-    { "path": "/api/reports/executive-full/send",      "schedule": "0 12 * * *" },
-    { "path": "/api/reports/client/connectpsp/send",   "schedule": "0 12 * * *" },
-    { "path": "/api/reports/client/csce/send",         "schedule": "0 12 * * *" },
-    { "path": "/api/reports/client/hospitalabc/send",  "schedule": "0 12 * * *" },
-    { "path": "/api/reports/client/ticketsports/send", "schedule": "0 12 * * *" },
-    { "path": "/api/reports/client/lotus/send",        "schedule": "0 12 * * *" }
+    { "path": "/api/notifications/farol",              "schedule": "0 12 * * 1-5"  },
+    { "path": "/api/notifications/farol?retry=2",      "schedule": "5 12 * * 1-5"  },
+    { "path": "/api/notifications/farol?retry=3",      "schedule": "10 12 * * 1-5" },
+    { "path": "/api/reports/executive-portfolio/send", "schedule": "45 11 * * 1-5" },
+    { "path": "/api/reports/executive-full/send",      "schedule": "0 12 * * 1-5"  },
+    { "path": "/api/reports/client/connectpsp/send",   "schedule": "0 12 * * 1-5"  },
+    { "path": "/api/reports/client/csce/send",         "schedule": "0 12 * * 1-5"  },
+    { "path": "/api/reports/client/hospitalabc/send",  "schedule": "0 12 * * 1-5"  },
+    { "path": "/api/reports/client/ticketsports/send", "schedule": "0 12 * * 1-5"  },
+    { "path": "/api/reports/client/lotus/send",        "schedule": "0 12 * * 1-5"  }
   ]
 }

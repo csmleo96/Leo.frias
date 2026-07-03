@@ -809,24 +809,72 @@ ${xcmgClientSection()}
 </body></html>`
 }
 
+// ── Retry wrapper ──────────────────────────────────────────────────────────
+async function sendWithRetry(
+  payload: Parameters<typeof sendEmail>[0],
+  maxAttempts = 3,
+  delayMs = 5_000,
+): Promise<{ ok: boolean; method?: string; error?: string; attempts: number }> {
+  let lastError = 'desconhecido'
+  for (let i = 1; i <= maxAttempts; i++) {
+    const r = await sendEmail(payload)
+    if (r.ok) return { ok: true, method: r.method, attempts: i }
+    lastError = r.error ?? lastError
+    console.warn(`[farol] tentativa ${i}/${maxAttempts} falhou: ${lastError}`)
+    if (i < maxAttempts) await new Promise(res => setTimeout(res, delayMs))
+  }
+  return { ok: false, error: lastError, attempts: maxAttempts }
+}
+
 // ── Handler ────────────────────────────────────────────────────────────────
 export async function GET(req: Request) {
   const url     = new URL(req.url)
   const preview = url.searchParams.get('preview') === 'true'
+
+  // ── 1. Coletar dados — registrar status de cada integração ────────────────
+  const integrations: Record<string, string> = {}
 
   const [portfolioRes, hsRes] = await Promise.allSettled([
     fetch(`${BASE()}/api/reports/executive-portfolio`, { cache: 'no-store' }),
     fetch(`${BASE()}/api/hubspot/dashboard`, { cache: 'no-store' }),
   ])
 
-  if (portfolioRes.status === 'rejected' || !portfolioRes.value.ok) {
-    return NextResponse.json({ error: 'Falha ao coletar dados do portfólio' }, { status: 500 })
+  integrations.portfolio = portfolioRes.status === 'fulfilled' && portfolioRes.value.ok ? 'ok' : 'error'
+  integrations.hubspot   = hsRes.status === 'fulfilled' && (hsRes.value as Response).ok   ? 'ok' : 'indisponível'
+
+  // Portfólio é fonte primária — bloqueia envio se falhar
+  if (integrations.portfolio === 'error') {
+    const errMsg = portfolioRes.status === 'rejected'
+      ? (portfolioRes.reason?.message ?? 'network error')
+      : `HTTP ${portfolioRes.value.status}`
+    console.error('[farol] portfólio indisponível:', errMsg)
+
+    const notifTo = (process.env.NOTIFICATION_EMAIL_TO ?? process.env.SMTP_USER ?? '')
+      .split(',').map((e: string) => e.trim()).filter(Boolean)
+    if (notifTo.length) {
+      const dateStr = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' })
+      await sendEmail({
+        to: notifTo,
+        subject: `🔴 FALHA — Relatório Executivo não enviado — ${dateStr}`,
+        html: `<p style="font-family:sans-serif">Fonte primária (portfólio) indisponível: <strong>${errMsg}</strong>.<br>O relatório automático do dia <strong>${dateStr}</strong> não foi gerado.</p>`,
+      }).catch(() => {})
+    }
+    return NextResponse.json({ error: 'Portfólio indisponível', detail: errMsg, integrations }, { status: 500 })
   }
 
-  const portfolioData = await portfolioRes.value.json()
-  const hsData = hsRes.status === 'fulfilled' && hsRes.value.ok
-    ? await hsRes.value.json().catch(() => null)
+  const portfolioData = await (portfolioRes as PromiseFulfilledResult<Response>).value.json()
+  const hsData = integrations.hubspot === 'ok'
+    ? await (hsRes as PromiseFulfilledResult<Response>).value.json().catch(() => null)
     : null
+
+  // Registrar integrações secundárias que vieram via portfólio (Zabbix, GLPI, Jira)
+  const firstClient = portfolioData.clients?.[0] ?? {}
+  integrations.zabbix = firstClient.zabbix != null ? 'ok' : 'indisponível'
+  integrations.glpi   = firstClient.glpi   != null ? 'ok' : 'indisponível'
+  integrations.jira   = firstClient.jira   != null ? 'ok' : 'indisponível'
+  integrations.xcmg   = 'integração pendente'
+
+  console.log('[farol] integrações:', integrations)
 
   const html = buildHTML360(portfolioData, hsData)
 
@@ -834,33 +882,51 @@ export async function GET(req: Request) {
     return new NextResponse(html, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
   }
 
-  const to = (process.env.NOTIFICATION_EMAIL_TO ?? process.env.SMTP_USER ?? '')
+  // ── 2. Destinatários ──────────────────────────────────────────────────────
+  const boardEmails = (process.env.BOARD_EMAIL_TO ?? '')
+    .split(',').map((e: string) => e.trim()).filter(Boolean)
+  const notifEmails = (process.env.NOTIFICATION_EMAIL_TO ?? process.env.SMTP_USER ?? '')
     .split(',').map((e: string) => e.trim()).filter(Boolean)
 
+  // Union sem duplicatas — board recebe, CSM recebe sempre
+  const to = [...new Set([...boardEmails, ...notifEmails])]
+
   if (to.length === 0) {
-    return NextResponse.json({ error: 'NOTIFICATION_EMAIL_TO não configurado' }, { status: 500 })
+    return NextResponse.json({ error: 'Nenhum destinatário configurado (BOARD_EMAIL_TO / NOTIFICATION_EMAIL_TO)' }, { status: 500 })
   }
 
-  const p       = portfolioData.portfolio ?? {}
-  const clients = (portfolioData.clients ?? []).map((cl: any) => ({ ...cl, farol: computeFarol360(cl) }))
-  const critical  = clients.filter((c: any) => c.farol === 'vermelho').length
-  const attention = clients.filter((c: any) => c.farol === 'amarelo').length
-  const statusLine = critical > 0 ? `🔴 ${critical} crítico(s)` : attention > 0 ? `🟡 ${attention} em atenção` : '🟢 Carteira saudável'
-  const date = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short', day: '2-digit', month: '2-digit' })
-  const subject = `${statusLine} — Farol 360° ${date} · Score ${p.portfolioScore}/100`
+  // ── 3. Assunto executivo formal ───────────────────────────────────────────
+  const p        = portfolioData.portfolio ?? {}
+  const clients  = (portfolioData.clients ?? []).map((cl: any) => ({ ...cl, farol: computeFarol360(cl) }))
+  const dateStr  = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' })
+  const subject  = `Relatório Executivo Diário | Saúde Operacional | ${dateStr}`
 
-  const result = await sendEmail({ to, subject, html })
+  // ── 4. Envio com retry (3 × 5 s) ─────────────────────────────────────────
+  const result = await sendWithRetry({ to, subject, html }, 3, 5_000)
 
+  // ── 5. Notificação de falha persistente ───────────────────────────────────
   if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 500 })
+    console.error('[farol] todas as tentativas falharam:', result.error)
+    if (notifEmails.length) {
+      await sendEmail({
+        to: notifEmails,
+        subject: `🔴 FALHA PERSISTENTE — Relatório não enviado — ${dateStr}`,
+        html: `<p style="font-family:sans-serif">O Relatório Executivo Diário não pôde ser enviado após <strong>${result.attempts} tentativas</strong>.<br>Erro: <code>${result.error}</code><br>Data: ${dateStr}</p>`,
+      }).catch(() => {})
+    }
+    return NextResponse.json({ error: result.error, attempts: result.attempts, integrations }, { status: 500 })
   }
 
   return NextResponse.json({
-    ok: true, method: result.method, sentTo: to, subject,
-    portfolioScore: p.portfolioScore,
-    farol: { verde: p.healthy, amarelo: p.attention, vermelho: p.critical },
-    sections: 16,
-    clients: clients.map((c: any) => ({ name: c.name, farol: c.farol, score: c.healthScore })),
-    generatedAt: portfolioData.generatedAt,
+    ok: true,
+    method:          result.method,
+    attempts:        result.attempts,
+    sentTo:          to,
+    subject,
+    integrations,
+    portfolioScore:  p.portfolioScore,
+    farol:           { verde: p.healthy, amarelo: p.attention, vermelho: p.critical },
+    clients:         clients.map((c: any) => ({ name: c.name, farol: c.farol, score: c.healthScore })),
+    generatedAt:     portfolioData.generatedAt,
   })
 }
