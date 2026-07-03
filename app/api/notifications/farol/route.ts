@@ -54,7 +54,6 @@ function farolReason360(cr: any, farol: string): string {
 
 // ── XTENTGROUP Brand CSS ───────────────────────────────────────────────────
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
 :root{
   --bg:#0A1316; --bg2:#101D22; --bg3:#26393E; --bg4:#2A4348; --bg5:#325258;
   --teal-d:#3B666D; --teal:#4D8188; --accent:#6EA2A8; --light:#8FBFC2; --pale:#B9DBDC; --near-w:#F3FAFA;

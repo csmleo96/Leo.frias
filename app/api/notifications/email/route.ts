@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import nodemailer from 'nodemailer'
-import { createBrowserClient } from '@supabase/ssr'
+import { sendEmail, testSmtpConnection } from '@/lib/email/sender'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,7 +31,7 @@ h1 { color: #0d1a1e; font-size: 22px; margin: 0 0 4px; }
 </style></head>
 <body>
 <div class="card">
-  <h1>🎯 CS Cockpit — Resumo Executivo</h1>
+  <h1>CS Cockpit — Resumo Executivo</h1>
   <p class="date">${date}</p>
   <div class="kpi-grid">
     <div class="kpi"><div class="kpi-val blue">${(metrics?.glpiTotal ?? 0) + (metrics?.jiraTotal ?? 0)}</div><div class="kpi-label">Total Chamados</div></div>
@@ -49,49 +48,67 @@ h1 { color: #0d1a1e; font-size: 22px; margin: 0 0 4px; }
 </body></html>`
 }
 
+// POST /api/notifications/email — envia resumo executivo
 export async function POST(request: NextRequest) {
-  const SMTP_HOST = process.env.SMTP_HOST
-  const SMTP_USER = process.env.SMTP_USER
-  const SMTP_PASS = process.env.SMTP_PASS
+  const { SMTP_HOST, SMTP_USER, SMTP_PASS } = process.env
   const TO = process.env.NOTIFICATION_EMAIL_TO ?? SMTP_USER
 
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
     return NextResponse.json({
       error: 'Configure SMTP_HOST, SMTP_USER e SMTP_PASS no .env.local para envio de email.',
       setup: {
-        SMTP_HOST: 'smtp.office365.com (Microsoft 365) ou smtp.gmail.com',
+        SMTP_HOST: 'smtp.office365.com',
         SMTP_PORT: '587',
-        SMTP_USER: 'leo.frias@xtentgroup.com',
-        SMTP_PASS: 'Senha de aplicativo gerada em conta Microsoft/Google',
-        NOTIFICATION_EMAIL_TO: 'destinatário do email (padrão: SMTP_USER)',
+        SMTP_USER: 'seu-usuario@dominio.com',
+        SMTP_PASS: 'senha-de-aplicativo',
+        NOTIFICATION_EMAIL_TO: 'destinatário (padrão: SMTP_USER)',
       },
     }, { status: 500 })
   }
 
+  const t0 = Date.now()
   try {
     const data = await request.json().catch(() => ({}))
     const html = buildEmailHtml(data)
 
-    const transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: Number(process.env.SMTP_PORT ?? 587),
-      secure: false,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
-      tls: { rejectUnauthorized: false },
-    })
-
-    await transporter.sendMail({
-      from: `"CS Cockpit" <${SMTP_USER}>`,
-      to: TO,
-      subject: `📊 CS Cockpit — Resumo Executivo ${new Date().toLocaleDateString('pt-BR')}`,
+    const result = await sendEmail({
+      to: TO!,
+      subject: `CS Cockpit — Resumo Executivo ${new Date().toLocaleDateString('pt-BR')}`,
       html,
     })
 
-    const sb = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!)
-    await sb.from('audit_log').insert({ action: 'email_sent', module: 'notifications', description: `Resumo executivo enviado para ${TO}`, level: 'info' })
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error, duration: result.duration }, { status: 500 })
+    }
 
-    return NextResponse.json({ ok: true, to: TO, sentAt: new Date().toISOString() })
+    return NextResponse.json({
+      ok: true,
+      method: result.method,
+      to: TO,
+      subject: `CS Cockpit — Resumo Executivo ${new Date().toLocaleDateString('pt-BR')}`,
+      messageId: 'messageId' in result ? result.messageId : undefined,
+      server:    'server'    in result ? result.server    : undefined,
+      duration:  result.duration,
+      sentAt:    new Date().toISOString(),
+    })
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    return NextResponse.json({ error: e.message, duration: Date.now() - t0 }, { status: 500 })
   }
+}
+
+// GET /api/notifications/email — testa conexão SMTP sem enviar email
+export async function GET() {
+  const result = await testSmtpConnection()
+  return NextResponse.json({
+    smtp: {
+      ok:       result.ok,
+      host:     result.host,
+      port:     result.port,
+      secure:   result.secure,
+      user:     result.user,
+      duration: result.duration,
+      error:    result.error,
+    },
+    checkedAt: new Date().toISOString(),
+  }, { status: result.ok ? 200 : 500 })
 }
