@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
-const API_URL = process.env.ZABBIX_API_URL
+const API_URL  = process.env.ZABBIX_API_URL
 const ZBX_USER = process.env.ZABBIX_USER
 const ZBX_PASS = process.env.ZABBIX_PASS
 
@@ -26,7 +26,7 @@ async function zbxRequest(method: string, params: Record<string, any>, auth?: st
     method: 'POST',
     headers,
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(10_000),
   })
 
   if (!res.ok) throw new Error(`HTTP ${res.status} — ${res.statusText}`)
@@ -37,7 +37,6 @@ async function zbxRequest(method: string, params: Record<string, any>, auth?: st
 }
 
 async function login(): Promise<string> {
-  // Zabbix 5.4+ usa 'username'; versões antigas usam 'user'
   try {
     return await zbxRequest('user.login', { username: ZBX_USER, password: ZBX_PASS })
   } catch {
@@ -61,14 +60,20 @@ export async function GET() {
   try {
     auth = await login()
 
+    const nowSec = Math.floor(Date.now() / 1000)
+    const ts7d   = nowSec - 7  * 86400
+    const ts30d  = nowSec - 30 * 86400
+
+    // Phase 1 — critical data: problems, hosts, triggers
+    // NOTE: omit `recent:true` so we get ALL active problems regardless of age.
+    // r_eventid already identifies recovered problems; we filter those out below.
     const [problems, hosts, triggers] = await Promise.all([
       zbxRequest('problem.get', {
         output: ['eventid', 'objectid', 'name', 'severity', 'clock', 'acknowledged', 'r_eventid'],
-        recent: true,
         suppressed: false,
         sortfield: 'eventid',
         sortorder: 'DESC',
-        limit: 100,
+        limit: 200,
       }, auth),
       zbxRequest('host.get', {
         output: ['hostid', 'name', 'status', 'available'],
@@ -80,9 +85,33 @@ export async function GET() {
         selectHosts: 'extend',
         only_true: true,
         filter: { value: 1 },
-        limit: 100,
+        limit: 200,
       }, auth),
     ])
+
+    // Phase 2 — trend data (best-effort; won't fail the request if unavailable)
+    let trend7dCount  = 0
+    let trend30dCount = 0
+    try {
+      const [ev7d, ev30d] = await Promise.all([
+        zbxRequest('event.get', {
+          output: ['eventid'],
+          time_from: ts7d,
+          time_to: nowSec,
+          value: '1',        // problem events only
+          countOutput: true, // returns just the integer count — efficient
+        }, auth),
+        zbxRequest('event.get', {
+          output: ['eventid'],
+          time_from: ts30d,
+          time_to: nowSec,
+          value: '1',
+          countOutput: true,
+        }, auth),
+      ])
+      trend7dCount  = Number(ev7d)  ?? 0
+      trend30dCount = Number(ev30d) ?? 0
+    } catch { /* non-critical */ }
 
     await logout(auth)
 
@@ -93,19 +122,20 @@ export async function GET() {
     })
 
     const formatted = (problems as any[]).map(p => ({
-      id: p.eventid,
-      triggerId: p.objectid,
-      name: p.name,
-      severity: Number(p.severity),
-      severityLabel: SEV_LABEL[Number(p.severity)] ?? '—',
-      severityColor: SEV_COLOR[Number(p.severity)] ?? '#94a3b8',
-      clock: p.clock,
-      age: formatAge(Number(p.clock)),
-      acknowledged: p.acknowledged === '1',
-      resolved: !!p.r_eventid,
-      host: trigHostMap[p.objectid] ?? '—',
+      id:             p.eventid,
+      triggerId:      p.objectid,
+      name:           p.name,
+      severity:       Number(p.severity),
+      severityLabel:  SEV_LABEL[Number(p.severity)] ?? '—',
+      severityColor:  SEV_COLOR[Number(p.severity)] ?? '#94a3b8',
+      clock:          p.clock,
+      age:            formatAge(Number(p.clock)),
+      acknowledged:   p.acknowledged === '1',
+      resolved:       !!p.r_eventid,
+      host:           trigHostMap[p.objectid] ?? '—',
     }))
 
+    // Active = not yet recovered (r_eventid absent)
     const active = formatted.filter(p => !p.resolved)
 
     const bySeverity = {
@@ -118,22 +148,49 @@ export async function GET() {
 
     const hostsArr     = hosts as any[]
     const hostsTotal   = hostsArr.length
-    // Zabbix 6+ deprecated 'available' on host; check both number and string forms
     const hostsUp      = hostsArr.filter(h => h.available === '1' || h.available === 1).length
     const hostsDown    = hostsArr.filter(h => h.available === '2' || h.available === 2).length
     const hostsUnknown = hostsArr.filter(h => !h.available || h.available === '0' || h.available === 0).length
-    // If all unknown (Zabbix 6+ without agent interface), mark all as up
+    // Zabbix 6+ deprecated per-host `available`; if all unknown, use total as up
     const effectiveUp  = hostsUp === 0 && hostsDown === 0 ? hostsTotal : hostsUp
-    const availability = hostsTotal > 0 ? Math.round((effectiveUp / hostsTotal) * 100) : 0
+    const availability = hostsTotal > 0
+      ? Number(((effectiveUp / hostsTotal) * 100).toFixed(2))
+      : 0
+
+    // Stability: % of time without disaster/high in the last 30 days
+    const stabilityScore = trend30dCount === 0
+      ? 100
+      : Math.max(0, Math.round(100 - (trend30dCount / 30)))
+
+    // Top recurring problems by name
+    const nameCounts: Record<string, number> = {}
+    active.forEach(p => {
+      nameCounts[p.name] = (nameCounts[p.name] ?? 0) + 1
+    })
+    const topRecurring = Object.entries(nameCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([name, count]) => ({ name, count }))
 
     return NextResponse.json({
       problems: formatted,
       stats: {
         totalProblems: active.length,
-        critical: bySeverity.disaster + bySeverity.high,
+        critical:       bySeverity.disaster + bySeverity.high,
         unacknowledged: active.filter(p => !p.acknowledged).length,
-        hostsTotal, hostsUp: effectiveUp, hostsDown, hostsUnknown, availability,
+        hostsTotal,
+        hostsUp:        effectiveUp,
+        hostsDown,
+        hostsUnknown,
+        availability,
+        // Explicit severity breakdown (used by farol and client routes)
         ...bySeverity,
+        // Trend data
+        events7d:        trend7dCount,
+        events30d:       trend30dCount,
+        stabilityScore,
+        topRecurring,
+        criticalProblems: active.filter(p => p.severity >= 4).slice(0, 10),
       },
     }, { headers: { 'Cache-Control': 'no-store' } })
 
@@ -150,8 +207,8 @@ export async function GET() {
 
 function formatAge(clock: number) {
   const d = Math.floor((Date.now() / 1000) - clock)
-  if (d < 60) return `${d}s`
-  if (d < 3600) return `${Math.floor(d / 60)}min`
+  if (d < 60)    return `${d}s`
+  if (d < 3600)  return `${Math.floor(d / 60)}min`
   if (d < 86400) return `${Math.floor(d / 3600)}h`
   return `${Math.floor(d / 86400)}d`
 }

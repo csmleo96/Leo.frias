@@ -24,21 +24,34 @@ async function collectGLPI(base: string, groupIds: number[], titleKeywords: stri
     return groupIds.length === 0 && titleKeywords.length === 0
   }
 
-  const tickets = allTickets.filter(filter)
-  const open = tickets.filter(t => t.status <= 4)
+  const tickets  = allTickets.filter(filter)
+  const open     = tickets.filter(t => t.status < 5)
   const resolved = tickets.filter(t => t.status >= 5)
   const critical = open.filter(t => t.priority >= 5)
-  const unattended = open.filter(t => !t.assignee || t.daysOpen > 1)
+
+  // FIX: unattended = no assigned technician (field assignedTo, not assignee=requester)
+  const unattended = open.filter(t => !t.assignedTo)
+
+  // SLA breached: tickets where slaBreached flag is set (populated by glpi route)
+  const slaBreached = open.filter(t => t.slaBreached)
+
+  // Avg resolution time from resolved tickets that have resolveTimeDays
+  const resolvedWithTime = resolved.filter(t => t.resolveTimeDays != null)
+  const avgResolutionDays = resolvedWithTime.length > 0
+    ? Math.round(resolvedWithTime.reduce((s: number, t: any) => s + (t.resolveTimeDays ?? 0), 0) / resolvedWithTime.length)
+    : null
 
   return {
-    total: tickets.length,
-    open: open.length,
-    resolved: resolved.length,
-    critical: critical.length,
-    unattended: unattended.length,
+    total:           tickets.length,
+    open:            open.length,
+    resolved:        resolved.length,
+    critical:        critical.length,
+    unattended:      unattended.length,
+    slaBreached:     slaBreached.length,
+    avgResolutionDays,
     criticalDetails: critical.slice(0, 5),
-    recentTickets: tickets
-      .sort((a, b) => new Date(b.dateCreation ?? 0).getTime() - new Date(a.dateCreation ?? 0).getTime())
+    recentTickets:   tickets
+      .sort((a: any, b: any) => new Date(b.dateCreation ?? 0).getTime() - new Date(a.dateCreation ?? 0).getTime())
       .slice(0, 5),
   }
 }
@@ -52,24 +65,33 @@ async function collectJira(base: string, projectKeys: string[]) {
     ? allIssues.filter(i => projectKeys.includes(i.project?.key ?? ''))
     : allIssues
 
-  const _now = Date.now()
-  const open = issues.filter(i => i.statusCategory !== 'done')
-  const done = issues.filter(i => i.statusCategory === 'done')
-  const overdue = open.filter(i => i.daysRemaining !== null && i.daysRemaining < 0)
-  const dueSoon = open.filter(i => i.daysRemaining !== null && i.daysRemaining >= 0 && i.daysRemaining <= 7)
-  const critical = open.filter(i => ['Highest', 'High'].includes(i.priority ?? ''))
+  const open       = issues.filter(i => i.statusCategory !== 'done')
+  const done       = issues.filter(i => i.statusCategory === 'done')
+  const inProgress = issues.filter(i => i.inProgress)
+  const backlog    = issues.filter(i => i.isNew)
+  const overdue    = open.filter(i => i.daysRemaining !== null && i.daysRemaining < 0)
+  const dueSoon    = open.filter(i => i.daysRemaining !== null && i.daysRemaining >= 0 && i.daysRemaining <= 7)
+  const critical   = open.filter(i => ['Highest', 'High'].includes(i.priority ?? ''))
   const unassigned = open.filter(i => !i.assignee)
 
+  // Use pre-computed avgResolutionDays from the Jira route (MTTR)
+  const avgResolutionDays = raw.summary?.avgResolutionDays ?? null
+  const slaCompliance     = raw.summary?.slaCompliance     ?? null
+
   return {
-    total: issues.length,
-    open: open.length,
-    done: done.length,
-    overdue: overdue.length,
-    dueSoon: dueSoon.length,
-    critical: critical.length,
-    unassigned: unassigned.length,
-    projects: [...new Set(issues.map(i => i.project?.name).filter(Boolean))],
-    overdueDetails: overdue.slice(0, 5),
+    total:           issues.length,
+    open:            open.length,
+    done:            done.length,
+    inProgress:      inProgress.length,
+    backlog:         backlog.length,
+    overdue:         overdue.length,
+    dueSoon:         dueSoon.length,
+    critical:        critical.length,
+    unassigned:      unassigned.length,
+    avgResolutionDays,
+    slaCompliance,
+    projects:        [...new Set(issues.map(i => i.project?.name).filter(Boolean))],
+    overdueDetails:  overdue.slice(0, 5),
     criticalDetails: critical.slice(0, 5),
   }
 }
@@ -81,36 +103,50 @@ async function collectZabbix(base: string, hostKeywords: string[]) {
   const allProblems: any[] = raw.problems ?? []
   const stats = raw.stats ?? {}
 
-  // Filter problems by client host keywords
   const filterProblem = (p: any): boolean => {
     if (hostKeywords.length === 0) return true
     return matchesClient(p.host ?? '', hostKeywords)
   }
 
   const problems = allProblems.filter(p => !p.resolved).filter(filterProblem)
-  const critical = problems.filter(p => p.severity >= 4)
-  const disaster = problems.filter(p => p.severity >= 5)
 
-  // Unique hosts mentioned in filtered problems (proxy for client host count)
-  const uniqueHosts = [...new Set(problems.map((p: any) => p.host).filter(Boolean))]
+  // Explicit severity buckets — all used by farol computation
+  const disaster  = problems.filter(p => p.severity >= 5)
+  const critical  = problems.filter(p => p.severity >= 4)
+  const highOnly  = problems.filter(p => p.severity === 4)
+  const average   = problems.filter(p => p.severity === 3)
+  const warning   = problems.filter(p => p.severity === 2)
 
-  // When keywords are set, use filtered problem hosts; otherwise use global stats
-  const hostsTotal = hostKeywords.length > 0 ? uniqueHosts.length || (stats.hostsTotal ?? 0) : (stats.hostsTotal ?? 0)
-  const hostsDown = hostKeywords.length === 0 ? (stats.hostsDown ?? 0) : disaster.length > 0 ? 1 : 0
-  const hostsUp = hostsTotal - hostsDown
-  const availability = hostsTotal > 0 ? Math.round((hostsUp / hostsTotal) * 100) : (stats.availability ?? 100)
+  // Host counts: when filtering by client keyword, fall back to global stats
+  // because the keyword filter only sees hosts WITH problems, not all client hosts.
+  // hostsDown is approximated by disaster-level problems with identifiable hosts.
+  const hostsTotal = stats.hostsTotal ?? 0
+  const hostsDown  = hostKeywords.length === 0
+    ? (stats.hostsDown ?? 0)
+    : disaster.filter((p: any) => p.host && p.host !== '—').length
+  const hostsUp    = Math.max(0, hostsTotal - hostsDown)
+  const availability = hostsTotal > 0
+    ? Number(((hostsUp / hostsTotal) * 100).toFixed(2))
+    : (stats.availability ?? 100)
 
   return {
-    totalProblems: problems.length,
-    critical: critical.length,
-    disaster: disaster.length,
+    totalProblems:   problems.length,
+    critical:        critical.length,
+    disaster:        disaster.length,
+    // FIX: high and warning fields were missing — farol was always reading undefined
+    high:            highOnly.length,
+    average:         average.length,
+    warning:         warning.length,
     hostsTotal,
     hostsUp,
     hostsDown,
     availability,
-    criticalProblems: critical.slice(0, 5),
-    // Note: host counts are approximate when filtered by keywords
-    isFiltered: hostKeywords.length > 0,
+    criticalProblems: critical.slice(0, 10),
+    // Trend data from zabbix route (pass-through for the report)
+    events7d:        stats.events7d   ?? null,
+    events30d:       stats.events30d  ?? null,
+    stabilityScore:  stats.stabilityScore ?? null,
+    isFiltered:      hostKeywords.length > 0,
   }
 }
 

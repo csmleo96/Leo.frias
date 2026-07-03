@@ -16,10 +16,10 @@ async function initSession(base: string, appToken: string, userToken: string): P
   const res = await fetch(`${base}/initSession`, {
     method: 'GET',
     headers: {
-      'Authorization': `user_token ${userToken}`,
-      'App-Token': appToken,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
+      'Authorization':  `user_token ${userToken}`,
+      'App-Token':      appToken,
+      'Content-Type':   'application/json',
+      'Accept':         'application/json',
     },
     cache: 'no-store',
   })
@@ -39,9 +39,31 @@ async function killSession(base: string, appToken: string, sessionToken: string)
   }).catch(() => {})
 }
 
+// Fetch one page of tickets from GLPI search API
+async function fetchPage(
+  base: string,
+  headers: Record<string, string>,
+  extraParams: URLSearchParams,
+  rangeStart: number,
+  pageSize: number,
+): Promise<{ items: any[]; totalcount: number }> {
+  const params = new URLSearchParams(extraParams)
+  params.set('range', `${rangeStart}-${rangeStart + pageSize - 1}`)
+
+  const res = await fetch(`${base}/search/Ticket?${params}`, {
+    headers: { ...headers, Accept: 'application/json' },
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    throw new Error(`Erro ao buscar chamados GLPI: ${res.status} ${await res.text()}`)
+  }
+  const raw = JSON.parse(await res.text())
+  return { items: raw.data ?? [], totalcount: raw.totalcount ?? 0 }
+}
+
 export async function GET(request: NextRequest) {
-  const BASE = process.env.GLPI_URL?.replace(/\/$/, '')
-  const APP_TOKEN = process.env.GLPI_APP_TOKEN
+  const BASE       = process.env.GLPI_URL?.replace(/\/$/, '')
+  const APP_TOKEN  = process.env.GLPI_APP_TOKEN
   const USER_TOKEN = process.env.GLPI_USER_TOKEN
 
   if (!BASE || !APP_TOKEN || !USER_TOKEN) {
@@ -51,9 +73,9 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url)
-  const statusFilter = searchParams.get('status') ?? 'all'
+  const statusFilter   = searchParams.get('status')   ?? 'all'
   const priorityFilter = searchParams.get('priority') ?? 'all'
-  const search = searchParams.get('search') ?? ''
+  const search         = searchParams.get('search')   ?? ''
 
   let sessionToken: string
   try {
@@ -65,137 +87,153 @@ export async function GET(request: NextRequest) {
   try {
     const headers = {
       'Session-Token': sessionToken,
-      'App-Token': APP_TOKEN,
-      Accept: 'application/json',
+      'App-Token':     APP_TOKEN,
+      'Accept':        'application/json',
     }
 
-    const params = new URLSearchParams({
-      'range': '0-99',
-      'sort': '15',
-      'order': 'DESC',
-      'is_deleted': '0',
-      'forcedisplay[0]': '2',    // id
-      'forcedisplay[1]': '1',    // name/title
-      'forcedisplay[2]': '12',   // status
-      'forcedisplay[3]': '3',    // priority
-      'forcedisplay[4]': '14',   // type
-      'forcedisplay[5]': '15',   // date_mod
-      'forcedisplay[6]': '5',    // users_id_recipient
-      'forcedisplay[7]': '4',    // _users_id_assign
-      'forcedisplay[8]': '19',   // date (creation)
-      'forcedisplay[9]': '7',    // itilcategories_id (categoria)
-      'forcedisplay[10]': '80',  // groups_id (grupo responsável)
-      'forcedisplay[11]': '50',  // requesttypes_id (tipo de requisição)
-      'forcedisplay[12]': '71',  // entities_id (entidade/departamento)
-      'forcedisplay[13]': '17',  // solvedate
+    // Base query params — forcedisplay field IDs match GLPI's search field numbering
+    const baseParams = new URLSearchParams({
+      'sort':                 '15',   // date_mod DESC
+      'order':                'DESC',
+      'is_deleted':           '0',
+      'forcedisplay[0]':      '2',    // ticket id
+      'forcedisplay[1]':      '1',    // title
+      'forcedisplay[2]':      '12',   // status
+      'forcedisplay[3]':      '3',    // priority
+      'forcedisplay[4]':      '14',   // type (incident / request)
+      'forcedisplay[5]':      '15',   // date_mod
+      'forcedisplay[6]':      '4',    // _users_id_assign (TECHNICIAN — was wrongly 5)
+      'forcedisplay[7]':      '5',    // users_id_recipient (REQUESTER)
+      'forcedisplay[8]':      '19',   // date_creation
+      'forcedisplay[9]':      '7',    // itilcategories_id
+      'forcedisplay[10]':     '80',   // groups_id
+      'forcedisplay[11]':     '17',   // solvedate
+      'forcedisplay[12]':     '18',   // closedate
+      'forcedisplay[13]':     '21',   // time_to_resolve (SLA deadline)
     })
 
+    // Apply optional filters
+    let criteriaIdx = 0
     if (statusFilter !== 'all') {
-      params.set('criteria[0][field]', '12')
-      params.set('criteria[0][searchtype]', 'equals')
-      params.set('criteria[0][value]', statusFilter)
+      baseParams.set(`criteria[${criteriaIdx}][field]`,      '12')
+      baseParams.set(`criteria[${criteriaIdx}][searchtype]`, 'equals')
+      baseParams.set(`criteria[${criteriaIdx}][value]`,      statusFilter)
+      criteriaIdx++
     }
     if (priorityFilter !== 'all') {
-      const offset = statusFilter !== 'all' ? 1 : 0
-      params.set(`criteria[${offset}][field]`, '3')
-      params.set(`criteria[${offset}][searchtype]`, 'equals')
-      params.set(`criteria[${offset}][value]`, priorityFilter)
+      baseParams.set(`criteria[${criteriaIdx}][field]`,      '3')
+      baseParams.set(`criteria[${criteriaIdx}][searchtype]`, 'equals')
+      baseParams.set(`criteria[${criteriaIdx}][value]`,      priorityFilter)
+      criteriaIdx++
     }
     if (search) {
-      const offset = (statusFilter !== 'all' ? 1 : 0) + (priorityFilter !== 'all' ? 1 : 0)
-      params.set(`criteria[${offset}][field]`, '1')
-      params.set(`criteria[${offset}][searchtype]`, 'contains')
-      params.set(`criteria[${offset}][value]`, search)
+      baseParams.set(`criteria[${criteriaIdx}][field]`,      '1')
+      baseParams.set(`criteria[${criteriaIdx}][searchtype]`, 'contains')
+      baseParams.set(`criteria[${criteriaIdx}][value]`,      search)
     }
 
-    const res = await fetch(`${BASE}/search/Ticket?${params}`, {
-      headers: { ...headers, 'Accept': 'application/json' },
-      cache: 'no-store',
-    })
+    // Fetch first page (200 tickets)
+    const PAGE_SIZE = 200
+    const first = await fetchPage(BASE, headers, baseParams, 0, PAGE_SIZE)
+    let items: any[] = first.items
+    const totalcount = first.totalcount
 
-    if (!res.ok) {
-      throw new Error(`Erro ao buscar chamados: ${res.status} ${await res.text()}`)
+    // Paginate one more page if GLPI has > 200 tickets (cover up to 400)
+    if (totalcount > PAGE_SIZE && items.length === PAGE_SIZE) {
+      try {
+        const second = await fetchPage(BASE, headers, baseParams, PAGE_SIZE, PAGE_SIZE)
+        items = items.concat(second.items)
+      } catch { /* non-critical — use first page only */ }
     }
 
-    const text = await res.text()
-    const raw = JSON.parse(text)
-    const items: any[] = raw.data ?? []
+    const nowMs = Date.now()
 
     const tickets = items.map((t: any) => {
-      // Classificar baseado em categoria, grupo e tipo de requisição
-      const categoryId = Number(t[7]) || 0
-      const groupId = Number(t[80]) || 0
-      const _requestTypeId = Number(t[50]) || 0
-      const _entityId = Number(t[71]) || 0
+      const assignedToId = t[4] ? Number(t[4]) : null    // technician (field 4)
+      const requesterId  = t[5] ? Number(t[5]) : null    // requester  (field 5)
+      const categoryId   = Number(t[7])  || 0
+      const groupId      = Number(t[80]) || 0
 
-      // Determinar tipo de origem
-      let origin = 'CLIENTE' // padrão
-      let category = 'Solicitação'
+      const createdMs    = t[19] ? new Date(String(t[19])).getTime() : nowMs
+      const modMs        = t[15] ? new Date(String(t[15])).getTime() : nowMs
+      const solvedMs     = t[17] ? new Date(String(t[17])).getTime() : null
+      const closedMs     = t[18] ? new Date(String(t[18])).getTime() : null
+      const slaDeadlineMs= t[21] ? new Date(String(t[21])).getTime() : null
 
-      // Grupos de infraestrutura conhecidos (ajuste conforme seu GLPI)
-      const infraGroups = [2, 3, 4, 5, 15, 16, 17] // IDs dos grupos de infra
-      const dbGroups = [6, 7, 8] // IDs dos grupos de BD
+      const daysOpen     = Math.floor((nowMs - createdMs) / 86_400_000)
+      const resolveTime  = solvedMs ? Math.floor((solvedMs - createdMs) / 86_400_000) : null
 
-      // Se o grupo está em infragrupos, é automático
-      if (infraGroups.includes(groupId)) {
-        origin = 'INFRAESTRUTURA'
-        category = 'Infraestrutura'
-      } else if (dbGroups.includes(groupId)) {
-        origin = 'BANCO_DE_DADOS'
-        category = 'Banco de Dados'
-      }
+      // SLA: overdue if past deadline and still open
+      const status       = Number(t[12]) || 1
+      const isOpen       = status < 5
+      const slaBreached  = isOpen && slaDeadlineMs !== null && slaDeadlineMs < nowMs
 
-      // Se o título contém palavras-chave de automático, marca como tal
-      const title = String(t[1] ?? '').toLowerCase()
-      if (title.includes('alerta') || title.includes('monitoring') || title.includes('zabbix') ||
-          title.includes('banco') || title.includes('database') || title.includes('sql') ||
-          title.includes('servidor') || title.includes('server') || title.includes('cpu') ||
-          title.includes('memoria') || title.includes('memory') || title.includes('disco')) {
-        origin = 'INFRAESTRUTURA'
-        category = 'Infraestrutura'
-        if (title.includes('banco') || title.includes('database') || title.includes('sql')) {
-          origin = 'BANCO_DE_DADOS'
-          category = 'Banco de Dados'
-        }
-      }
-
-      const nowMs = Date.now()
-      const createdMs = t[19] ? new Date(String(t[19])).getTime() : nowMs
-      const modMs = t[15] ? new Date(String(t[15])).getTime() : nowMs
       return {
-        id: t[2] ?? '?',
-        title: t[1] ?? '(sem título)',
-        status: Number(t[12]) || 1,
-        statusLabel: STATUS_LABEL[Number(t[12])] ?? 'Desconhecido',
-        priority: Number(t[3]) || 3,
+        id:           t[2] ?? '?',
+        title:        t[1] ?? '(sem título)',
+        status,
+        statusLabel:  STATUS_LABEL[status] ?? 'Desconhecido',
+        priority:     Number(t[3]) || 3,
         priorityLabel: PRIORITY_LABEL[Number(t[3])] ?? 'Média',
-        type: Number(t[14]) || 1,
-        typeLabel: TYPE_LABEL[Number(t[14])] ?? 'Incidente',
-        dateMod: t[15] ?? null,
+        type:         Number(t[14]) || 1,
+        typeLabel:    TYPE_LABEL[Number(t[14])] ?? 'Incidente',
+        dateMod:      t[15] ?? null,
         dateCreation: t[19] ?? null,
-        solveDate: t[17] ?? null,
-        daysOpen: Math.floor((nowMs - createdMs) / 86400000),
-        daysSinceUpdate: Math.floor((nowMs - modMs) / 86400000),
-        assignee: t[5] ? String(t[5]) : null,
-        origin,
-        category,
+        solveDate:    t[17] ?? null,
+        closeDate:    t[18] ?? null,
+        slaDeadline:  t[21] ?? null,
+        slaBreached,
+        daysOpen,
+        daysSinceUpdate: Math.floor((nowMs - modMs) / 86_400_000),
+        resolveTimeDays: resolveTime,
+        // FIX: technician = field 4, requester = field 5
+        assignedTo:   assignedToId,
+        requester:    requesterId,
+        // Legacy alias kept for backward compat with any consumers
+        assignee:     assignedToId,
         categoryId,
         groupId,
-        isAutomated: origin !== 'CLIENTE',
       }
     })
 
+    const open        = tickets.filter(t => t.status < 5)
+    const resolved    = tickets.filter(t => t.status >= 5)
+    const critical    = open.filter(t => t.priority >= 5)
+    // FIXED: unattended = no assigned technician (not "open > 1 day")
+    const unattended  = open.filter(t => !t.assignedTo)
+    const slaBreached = open.filter(t => t.slaBreached)
+
+    // Avg resolution time (only resolved tickets with computed resolveTimeDays)
+    const resolvedWithTime = resolved.filter(t => t.resolveTimeDays !== null)
+    const avgResolutionDays = resolvedWithTime.length > 0
+      ? Math.round(resolvedWithTime.reduce((s, t) => s + (t.resolveTimeDays ?? 0), 0) / resolvedWithTime.length)
+      : null
+
+    // Stats computed from fetched items (which covers up to 400 tickets)
+    // `total` reflects the real GLPI count via totalcount
     const stats = {
-      total: raw.totalcount ?? items.length,
-      new: items.filter((t: any) => Number(t[12]) === 1).length,
-      inProgress: items.filter((t: any) => [2, 3].includes(Number(t[12]))).length,
-      pending: items.filter((t: any) => Number(t[12]) === 4).length,
-      solved: items.filter((t: any) => Number(t[12]) === 5).length,
-      closed: items.filter((t: any) => Number(t[12]) === 6).length,
+      total:        totalcount,
+      fetched:      items.length,
+      truncated:    items.length < totalcount,
+      new:          tickets.filter(t => t.status === 1).length,
+      inProgress:   tickets.filter(t => [2, 3].includes(t.status)).length,
+      pending:      tickets.filter(t => t.status === 4).length,
+      solved:       tickets.filter(t => t.status === 5).length,
+      closed:       tickets.filter(t => t.status === 6).length,
+      open:         open.length,
+      resolved:     resolved.length,
+      critical:     critical.length,
+      unattended:   unattended.length,
+      slaBreached:  slaBreached.length,
+      slaCompliance: open.length > 0
+        ? Math.round(((open.length - slaBreached.length) / open.length) * 100)
+        : 100,
+      avgResolutionDays,
     }
 
     await killSession(BASE, APP_TOKEN, sessionToken)
     return NextResponse.json({ tickets, stats }, { headers: { 'Cache-Control': 'no-store' } })
+
   } catch (e: any) {
     await killSession(BASE, APP_TOKEN, sessionToken)
     return NextResponse.json({ error: e.message }, { status: 500 })
