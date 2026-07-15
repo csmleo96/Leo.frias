@@ -70,7 +70,7 @@ function generateRecommendation(name: string, cr: any, farol: string): string {
   if (farol === 'amarelo') {
     return `Para ${name}, recomendamos um plano de estabilização nas próximas 2 semanas: resolver alertas pendentes, fortalecer monitoramento proativo e revisar capacidade de storage e suporte. Uma reunião executiva de alinhamento com o cliente é recomendada para demonstrar transparência e comprometimento.`
   }
-  return `${name} está em excelente forma operacional (score ${score}/100). Aproveitar o momento para avançar o roadmap de evolução: implementar integrações de observabilidade avançada, expandir cobertura de backup e apresentar proposta de evolução para o próximo trimestre.`
+  return `${name} está em excelente forma operacional (score ${score}/100). Aproveitar o momento para avançar o roadmap de evolução: implementar integrações de observabilidade avançada e apresentar proposta de evolução para o próximo trimestre.`
 }
 
 function generateClientOpportunities(name: string, cr: any) {
@@ -84,8 +84,6 @@ function generateClientOpportunities(name: string, cr: any) {
   if ((z?.totalProblems ?? 0) > 3) {
     ops.push({ title: 'NOC 24x7 Dedicado', priority: 'alta', justification: `${name} apresenta ${z?.totalProblems ?? 0} problemas ativos recorrentes. O NOC 24x7 previne recorrência fora do horário comercial.`, impact: 'SLA de disponibilidade elevado para 99,9%. Redução de impactos noturnos.', revenue: 'Serviço gerenciado NOC — receita recorrente mensal.' })
   }
-  ops.push({ title: 'Backup Gerenciado Veeam', priority: 'alta', justification: `Dados de backup não estão integrados ao relatório. Impossível garantir conformidade sem visibilidade centralizada.`, impact: 'RPO/RTO garantidos. Compliance auditável.', revenue: 'Serviço de BaaS com margem elevada.' })
-  ops.push({ title: 'Disaster Recovery Ativo', priority: 'alta', justification: `Não há integração de DR para ${name}. Em caso de desastre, o tempo de recuperação real pode exceder o contratado.`, impact: 'Continuidade de negócios. Conformidade regulatória.', revenue: 'Expansão contratual com DR Gerenciado.' })
   if ((cr.glpi?.open ?? 0) > 20) {
     ops.push({ title: 'Automação de Triagem via IA', priority: 'média', justification: `Volume elevado de chamados abertos (${cr.glpi.open}). Triagem manual gera atrasos no atendimento.`, impact: 'Redução de MTTA em 40%. Eliminação de chamados sem responsável.', revenue: 'Upsell de módulo de automação inteligente.' })
   }
@@ -107,9 +105,6 @@ function generateActionPlan(cr: any, farol: string) {
     actions.push({ action: `Escalar ${cr.glpi.critical} chamado(s) críticos para N2/N3`, owner: 'Suporte N2', deadline: d(1), status: 'Pendente' })
   if ((cr.jira?.overdue ?? 0) > 0)
     actions.push({ action: `Replanejar ${cr.jira.overdue} atividade(s) vencidas no Jira`, owner: 'Tech Lead', deadline: d(3), status: 'Pendente' })
-  actions.push({ action: 'Integrar Veeam Backup ao painel de monitoramento', owner: 'Engenharia', deadline: d(30), status: 'Backlog' })
-  actions.push({ action: 'Validar e documentar plano de DR e RPO/RTO', owner: 'Engenharia', deadline: d(45), status: 'Backlog' })
-
   return actions.slice(0, 6)
 }
 
@@ -131,7 +126,7 @@ function buildPortfolioSummary(clients: any[], agg: any): string {
   const mainRisk = clients.find(c => (c.zabbix?.disaster ?? 0) > 0)
   if (mainRisk) txt += `Principal risco: ${mainRisk.name} apresenta falha de nível Disaster na infraestrutura — ação imediata requerida. `
 
-  txt += `As principais oportunidades identificadas são a integração de Backup Gerenciado (Veeam), Disaster Recovery e observabilidade APM em todos os clientes. Recomenda-se priorizar a estabilização dos ambientes críticos antes de avançar novos projetos.`
+  txt += `A principal oportunidade identificada é a expansão de observabilidade APM em todos os clientes. Recomenda-se priorizar a estabilização dos ambientes críticos antes de avançar novos projetos.`
   return txt
 }
 
@@ -153,7 +148,6 @@ function buildRoadmap(_clients: any[]) {
 
   return {
     thirtyDays: [
-      'Integrar Veeam Backup API ao Leonardo CS Cockpit para todos os clientes',
       'Resolver todos os chamados críticos abertos da carteira',
       'Revisar e atualizar configurações de Datadog App Key (chave atual inválida)',
       'Mapear hostnames Zabbix por cliente para filtragem precisa por ambiente',
@@ -161,7 +155,6 @@ function buildRoadmap(_clients: any[]) {
     ],
     sixtyDays: [
       'Integrar SQL Server / YugabyteDB ao painel de observabilidade',
-      'Documentar e validar RTO/RPO de DR para todos os clientes',
       'Implementar alertas proativos de capacidade de storage',
       'Criar dashboards executivos no Datadog por cliente',
       'Realizar QBR com todos os clientes da carteira',
@@ -231,7 +224,6 @@ export async function GET() {
       risks.push({ severity: 'high', title: `${cr.jira.overdue} atividade(s) com prazo vencido` })
     if ((cr.datadog?.alert ?? 0) > 3)
       risks.push({ severity: 'medium', title: `${cr.datadog.alert} monitores Datadog em alerta` })
-    risks.push({ severity: 'medium', title: 'Backup não integrado — conformidade não verificável' })
 
     return {
       slug, name, farol, farolReason: reason,
@@ -251,8 +243,6 @@ export async function GET() {
       recommendation,
       serviceMetrics: { mtta, mttr: 'N/D — integração pendente', sla: slaStatus },
       unavailable: {
-        backup:     { available: false, reason: 'Integração Veeam Backup não configurada' },
-        dr:         { available: false, reason: 'Integração DR/Replicação não configurada' },
         ha:         { available: false, reason: 'Integração HA não configurada' },
         sqlDirect:  { available: false, reason: 'Integração direta SQL Server não configurada — alertas parciais via Zabbix' },
         yugabyte:   { available: false, reason: 'Integração YugabyteDB não configurada' },

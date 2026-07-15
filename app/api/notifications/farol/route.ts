@@ -378,12 +378,6 @@ function clientSection(cl: any): string {
       <div class="sst" style="margin-top:1.2rem">Infraestrutura</div>
       <table class="it"><tbody>${itRows(infraRows)}</tbody></table>
 
-      <div class="sst">Backup &amp; Continuidade</div>
-      <div class="g2" style="margin-top:.25rem">
-        <div class="nd-box-gray"><div class="nd-title-gray">Backup (Veeam)</div>Jobs, sucesso/falha e retenção indisponíveis — integração pendente.</div>
-        <div class="nd-box-gray"><div class="nd-title-gray">Disaster Recovery</div>RPO, RTO e status de replicação indisponíveis — integração pendente.</div>
-      </div>
-
       <div class="sst">Service Desk — GLPI + Jira</div>
       <table class="it"><tbody>${itRows(sdRows)}</tbody></table>
       <div class="csg" style="margin-top:.4rem">Lista completa de chamados e atividades desta e das demais contas: seção "Atividades Jira" e "Chamados GLPI" no final do relatório.</div>
@@ -662,14 +656,12 @@ ${clients.map((cl: any) => clientSection(cl)).join('')}
       <h3>Principais Riscos</h3>
       <ul>${clients.filter((c: any) => c.farol !== 'verde').slice(0, 3).map((c: any) =>
         `<li>${c.name}: ${c.farolReason}</li>`).join('')}
-        <li>Backup Veeam — nenhum cliente integrado (risco regulatório)</li>
         <li>Banco XCMG — integração pendente em todos os clientes</li>
       </ul>
     </div>
     <div class="ds">
       <h3>Oportunidades</h3>
       <ul>
-        <li>Backup Gerenciado Veeam (BaaS) — todos os clientes</li>
         <li>NOC 24x7 — clientes com score &lt;80</li>
         <li>Integração XCMG — módulo de banco para todos</li>
         <li>Pipeline HubSpot: ${pipeline} em aberto · Win rate ${winRate}</li>
