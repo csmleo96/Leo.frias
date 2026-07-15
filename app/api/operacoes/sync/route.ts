@@ -45,8 +45,11 @@ async function fetchGlpiTickets() {
   const headers = { 'Session-Token': session_token, 'App-Token': appToken, Accept: 'application/json' }
 
   // Fetch tickets (up to 200)
+  // Field IDs verified against GLPI's own /listSearchOptions/Ticket: 15 = date de
+  // abertura (creation), 19 = última atualização (date_mod) — opposite of what field
+  // numbers might suggest.
   const params = new URLSearchParams({
-    range: '0-199', sort: '15', order: 'DESC', is_deleted: '0',
+    range: '0-199', sort: '19', order: 'DESC', is_deleted: '0',
     'forcedisplay[0]': '2', 'forcedisplay[1]': '1', 'forcedisplay[2]': '12',
     'forcedisplay[3]': '3', 'forcedisplay[4]': '14', 'forcedisplay[5]': '15',
     'forcedisplay[6]': '5', 'forcedisplay[7]': '4', 'forcedisplay[8]': '19',
@@ -64,7 +67,7 @@ async function fetchGlpiTickets() {
     status: Number(t[12]) || 1, statusLabel: GLPI_STATUS_LABEL[Number(t[12])] ?? 'Desconhecido',
     priority: Number(t[3]) || 3, priorityLabel: GLPI_PRIORITY_LABEL[Number(t[3])] ?? 'Média',
     type: Number(t[14]) || 1, typeLabel: GLPI_TYPE_LABEL[Number(t[14])] ?? 'Incidente',
-    dateMod: t[15] ?? null, dateCreation: t[19] ?? null,
+    dateMod: t[19] ?? null, dateCreation: t[15] ?? null,
     assignee: t[5] ? String(t[5]) : null,
   }))
 }
@@ -78,17 +81,32 @@ async function fetchJiraIssues() {
 
   const auth = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64')
   const jql = 'project in (HV, IDB, MSPINFRA, MSPPRO, NMA) ORDER BY updated DESC'
+  const fields = ['summary', 'status', 'issuetype', 'priority', 'assignee', 'project', 'updated', 'created']
 
-  const res = await fetch(`${base}/rest/api/3/search/jql`, {
-    method: 'POST',
-    headers: { Authorization: auth, Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jql, maxResults: 200, fields: ['summary', 'status', 'issuetype', 'priority', 'assignee', 'project', 'updated', 'created'] }),
-    cache: 'no-store',
-  })
-  if (!res.ok) throw new Error(`Jira API: ${res.status} ${await res.text()}`)
+  // Jira Cloud caps each page at 100 regardless of maxResults — paginate via
+  // nextPageToken to cover the full backlog (matches /api/jira/route.ts).
+  const MAX_PAGES = 3
+  const issues: any[] = []
+  let nextPageToken: string | undefined
 
-  const data = await res.json()
-  return (data.issues ?? []).map((i: any) => ({
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const res = await fetch(`${base}/rest/api/3/search/jql`, {
+      method: 'POST',
+      headers: { Authorization: auth, Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jql, maxResults: 100, fields, ...(nextPageToken ? { nextPageToken } : {}) }),
+      cache: 'no-store',
+    })
+    if (!res.ok) {
+      if (page === 0) throw new Error(`Jira API: ${res.status} ${await res.text()}`)
+      break
+    }
+    const data = await res.json()
+    issues.push(...(data.issues ?? []))
+    nextPageToken = data.nextPageToken ?? undefined
+    if (!nextPageToken) break
+  }
+
+  return issues.map((i: any) => ({
     key: i.key,
     summary: i.fields.summary,
     status: i.fields.status?.name ?? '—',
@@ -130,7 +148,7 @@ export async function POST() {
       if (error) throw new Error(error.message)
       glpiSynced = rows.length
     }
-  } catch (e: any) { errors.push(`GLPI: ${e.message}`) }
+  } catch (e: any) { errors.push(`GLPI: ${e.message}${e.cause ? ` (${e.cause.code ?? e.cause.message ?? e.cause})` : ''}`) }
 
   // ── Jira ────────────────────────────────────────────────────────────
   try {
@@ -155,7 +173,7 @@ export async function POST() {
       if (error) throw new Error(error.message)
       jiraSynced = rows.length
     }
-  } catch (e: any) { errors.push(`Jira: ${e.message}`) }
+  } catch (e: any) { errors.push(`Jira: ${e.message}${e.cause ? ` (${e.cause.code ?? e.cause.message ?? e.cause})` : ''}`) }
 
   // ── Log ──────────────────────────────────────────────────────────────
   await sb.from('sync_log').insert({
@@ -173,3 +191,6 @@ export async function POST() {
     errors, syncedAt: new Date().toISOString(),
   })
 }
+
+// Vercel Cron Jobs invoke via GET — alias it to the same sync logic.
+export const GET = POST

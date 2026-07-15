@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getClient, matchesClient } from '@/lib/reports/clients'
+import { getClient, matchesClient, CLIENTS, type ClientConfig } from '@/lib/reports/clients'
 
 export const dynamic = 'force-dynamic'
 
@@ -7,9 +7,20 @@ export const dynamic = 'force-dynamic'
 async function safeGet(url: string) {
   try {
     const r = await fetch(url, { cache: 'no-store' })
-    if (!r.ok) return null
-    return r.json()
-  } catch { return null }
+    if (!r.ok) {
+      console.error(`[safeGet] ${url} → HTTP ${r.status} ${r.statusText}`)
+      return null
+    }
+    const json = await r.json()
+    if (json?.error) {
+      console.error(`[safeGet] ${url} → API error: ${json.error}`)
+      return null
+    }
+    return json
+  } catch (e: any) {
+    console.error(`[safeGet] ${url} → ${e.message}`)
+    return null
+  }
 }
 
 // ── Data Collectors ────────────────────────────────────────────────────────
@@ -41,6 +52,12 @@ async function collectGLPI(base: string, groupIds: number[], titleKeywords: stri
     ? Math.round(resolvedWithTime.reduce((s: number, t: any) => s + (t.resolveTimeDays ?? 0), 0) / resolvedWithTime.length)
     : null
 
+  // Open tickets, most urgent first (priority desc, then longest-open) — used by
+  // the Farol report to list real open chamados per client, not just a count.
+  const openDetails = [...open]
+    .sort((a: any, b: any) => (b.priority - a.priority) || (b.daysOpen - a.daysOpen))
+    .slice(0, 8)
+
   return {
     total:           tickets.length,
     open:            open.length,
@@ -50,20 +67,44 @@ async function collectGLPI(base: string, groupIds: number[], titleKeywords: stri
     slaBreached:     slaBreached.length,
     avgResolutionDays,
     criticalDetails: critical.slice(0, 5),
+    openDetails,
     recentTickets:   tickets
       .sort((a: any, b: any) => new Date(b.dateCreation ?? 0).getTime() - new Date(a.dateCreation ?? 0).getTime())
       .slice(0, 5),
   }
 }
 
-async function collectJira(base: string, projectKeys: string[]) {
+async function collectJira(base: string, client: ClientConfig) {
   const raw = await safeGet(`${base}/api/jira`)
   if (!raw) return null
   const allIssues: any[] = raw.issues ?? []
 
-  const issues = projectKeys.length > 0
-    ? allIssues.filter(i => projectKeys.includes(i.project?.key ?? ''))
-    : allIssues
+  const { jiraProjectKeys: projectKeys, jiraTitleKeywords: titleKeywords, jiraBroadKeywords: broadKeywords } = client
+
+  // Several clients share the same Jira project (e.g. MSPPRO/MSPINFRA hold work for more
+  // than one account, including ConnectPSP's own "[Connect]"-tagged issues living inside
+  // Hospital ABC's MSPINFRA). Specificity order, most to least confident:
+  //   1. This client's own SPECIFIC tag — always wins outright.
+  //   2. This client's own BROAD keyword (too generic to be exclusive on its own, e.g. bare
+  //      "connect") — wins unless another client's SPECIFIC tag also matches (e.g. an XCMG
+  //      issue mentioning "Direct Connect/Megaport" stays XCMG's).
+  //   3. Plain project-key membership (weakest signal) — wins unless ANY other client's tag,
+  //      specific or broad, also matches (an explicit tag always beats bare project membership).
+  const others = Object.values(CLIENTS).filter(c => c.slug !== client.slug)
+  const otherSpecificTags = others.flatMap(c => c.jiraTitleKeywords)
+  const otherAllTags      = others.flatMap(c => [...c.jiraTitleKeywords, ...c.jiraBroadKeywords])
+
+  const issues = allIssues.filter(i => {
+    const summary = i.summary ?? ''
+    if (titleKeywords.length > 0 && matchesClient(summary, titleKeywords)) return true
+    if (broadKeywords.length > 0 && matchesClient(summary, broadKeywords)) {
+      return !matchesClient(summary, otherSpecificTags)
+    }
+    if (projectKeys.length > 0 && projectKeys.includes(i.project?.key ?? '')) {
+      return !matchesClient(summary, otherAllTags)
+    }
+    return false
+  })
 
   const open       = issues.filter(i => i.statusCategory !== 'done')
   const done       = issues.filter(i => i.statusCategory === 'done')
@@ -77,6 +118,13 @@ async function collectJira(base: string, projectKeys: string[]) {
   // Use pre-computed avgResolutionDays from the Jira route (MTTR)
   const avgResolutionDays = raw.summary?.avgResolutionDays ?? null
   const slaCompliance     = raw.summary?.slaCompliance     ?? null
+
+  // Every open activity, most urgent first (overdue, then soonest due date, then
+  // items with no deadline set at all) — used by the Farol report to list each
+  // real open atividade per client, not just the ones that happen to have a prazo.
+  const openDetails = [...open]
+    .sort((a: any, b: any) => (a.daysRemaining ?? Infinity) - (b.daysRemaining ?? Infinity))
+    .slice(0, 10)
 
   return {
     total:           issues.length,
@@ -93,6 +141,7 @@ async function collectJira(base: string, projectKeys: string[]) {
     projects:        [...new Set(issues.map(i => i.project?.name).filter(Boolean))],
     overdueDetails:  overdue.slice(0, 5),
     criticalDetails: critical.slice(0, 5),
+    openDetails,
   }
 }
 
@@ -150,16 +199,24 @@ async function collectZabbix(base: string, hostKeywords: string[]) {
   }
 }
 
-async function collectDatadog(base: string, tags: string[]) {
+async function collectDatadog(base: string, client: ClientConfig) {
+  const { datadogTags: tags, datadogNameKeywords: nameKeywords } = client
+
+  // Datadog is only registered/tagged for some clients (currently ConnectPSP) — clients
+  // with no tags AND no name keywords configured simply don't have Datadog and should
+  // show nothing, not the whole company's monitors.
+  if (tags.length === 0 && nameKeywords.length === 0) return null
+
   const raw = await safeGet(`${base}/api/datadog`)
   if (!raw || !raw.configured || raw.error) return null
 
   const allMonitors: any[] = raw.monitors ?? []
 
   const filterMonitor = (m: any): boolean => {
-    if (tags.length === 0) return true
     const mTags: string[] = m.tags ?? []
-    return tags.some(t => mTags.includes(t))
+    if (tags.some(t => mTags.includes(t))) return true
+    if (nameKeywords.length > 0 && matchesClient(m.name ?? '', nameKeywords)) return true
+    return false
   }
 
   const monitors = allMonitors.filter(filterMonitor)
@@ -168,6 +225,7 @@ async function collectDatadog(base: string, tags: string[]) {
   const alert = monitors.filter(m => m.status === 'Alert').length
 
   return {
+    configured: true,
     totalMonitors: monitors.length,
     ok,
     warn,
@@ -178,8 +236,14 @@ async function collectDatadog(base: string, tags: string[]) {
 
 // ── Health Score ───────────────────────────────────────────────────────────
 function calcHealthScore(glpi: any, jira: any, zabbix: any, datadog: any) {
-  // SLA (25) — baseado em disponibilidade infra
-  let sla = 25
+  // When NO integration has data, return score 0 — avoids silent perfect score
+  const hasAnyData = glpi !== null || jira !== null || zabbix !== null || datadog !== null
+  if (!hasAnyData) {
+    return { score: 0, breakdown: { sla: 0, disponibilidade: 0, chamados: 0, observabilidade: 0, infraestrutura: 0 }, noData: true }
+  }
+
+  // SLA (25) — 0 when zabbix unavailable (can't measure uptime without it)
+  let sla = zabbix ? 25 : 0
   if (zabbix) {
     const av = zabbix.availability ?? 100
     if (av >= 99.9) sla = 25
@@ -190,15 +254,15 @@ function calcHealthScore(glpi: any, jira: any, zabbix: any, datadog: any) {
     else                 sla = 3
   }
 
-  // Disponibilidade (20) — hosts online
-  let disp = 20
+  // Disponibilidade (20) — 0 when zabbix unavailable
+  let disp = zabbix ? 20 : 0
   if (zabbix?.hostsTotal > 0) {
     disp = Math.round(20 * (zabbix.hostsUp / zabbix.hostsTotal))
     if (zabbix.disaster > 0) disp = Math.max(0, disp - 8)
   }
 
-  // Chamados (20) — GLPI + Jira juntos
-  let chamados = 20
+  // Chamados (20) — 0 when no ticket source available
+  let chamados = (glpi || jira) ? 20 : 0
   const criticalTotal = (glpi?.critical ?? 0) + (jira?.critical ?? 0)
   const overdueTotal = (jira?.overdue ?? 0)
   if (criticalTotal > 5)      chamados -= 10
@@ -207,15 +271,15 @@ function calcHealthScore(glpi: any, jira: any, zabbix: any, datadog: any) {
   if (overdueTotal > 3)       chamados = Math.max(0, chamados - 5)
   if (glpi?.unattended > 5)   chamados = Math.max(0, chamados - 5)
 
-  // Observabilidade (15) — Datadog
-  let obs = 15
+  // Observabilidade (15) — 0 when datadog unavailable
+  let obs = datadog ? 15 : 0
   if (datadog) {
     if (datadog.alert > 3)      obs -= 8
     else if (datadog.alert > 0) obs -= 4
     if (datadog.warn > 5)       obs = Math.max(0, obs - 3)
   }
 
-  // Backup/DR/Storage (20) — sem integração ainda: assumir ok
+  // Backup/DR/Storage (20) — não integrado, parcial fixo
   const infra = 20
 
   const score = Math.max(0, Math.min(100, sla + disp + chamados + obs + infra))
@@ -283,9 +347,9 @@ export async function GET(
 
   const [glpiData, jiraData, zabbixData, datadogData] = await Promise.all([
     collectGLPI(base, client.glpiGroupIds, client.glpiTitleKeywords),
-    collectJira(base, client.jiraProjectKeys),
+    collectJira(base, client),
     collectZabbix(base, client.zabbixHostKeywords),
-    collectDatadog(base, client.datadogTags),
+    collectDatadog(base, client),
   ])
 
   const { score, breakdown } = calcHealthScore(glpiData, jiraData, zabbixData, datadogData)

@@ -10,9 +10,20 @@ const SLUGS = Object.keys(CLIENTS)
 async function safeGet(url: string) {
   try {
     const r = await fetch(url, { cache: 'no-store' })
-    if (!r.ok) return null
-    return r.json()
-  } catch { return null }
+    if (!r.ok) {
+      console.error(`[portfolio/safeGet] ${url} → HTTP ${r.status} ${r.statusText}`)
+      return null
+    }
+    const json = await r.json()
+    if (json?.error) {
+      console.error(`[portfolio/safeGet] ${url} → API error: ${json.error}`)
+      return null
+    }
+    return json
+  } catch (e: any) {
+    console.error(`[portfolio/safeGet] ${url} → ${e.message}`)
+    return null
+  }
 }
 
 // ── Farol logic ────────────────────────────────────────────────────────────
@@ -78,8 +89,6 @@ function generateClientOpportunities(name: string, cr: any) {
   if ((cr.glpi?.open ?? 0) > 20) {
     ops.push({ title: 'Automação de Triagem via IA', priority: 'média', justification: `Volume elevado de chamados abertos (${cr.glpi.open}). Triagem manual gera atrasos no atendimento.`, impact: 'Redução de MTTA em 40%. Eliminação de chamados sem responsável.', revenue: 'Upsell de módulo de automação inteligente.' })
   }
-  ops.push({ title: 'Kubernetes/RKE Gerenciado', priority: 'média', justification: `Ambiente containerizado não monitorado. Visibilidade de pods, nodes e namespaces está ausente.`, impact: 'Detecção precoce de CrashLoopBackOff e problemas de scheduling.', revenue: 'Serviço de K8s Management com MRR fixo.' })
-
   return ops
 }
 
@@ -100,7 +109,6 @@ function generateActionPlan(cr: any, farol: string) {
     actions.push({ action: `Replanejar ${cr.jira.overdue} atividade(s) vencidas no Jira`, owner: 'Tech Lead', deadline: d(3), status: 'Pendente' })
   actions.push({ action: 'Integrar Veeam Backup ao painel de monitoramento', owner: 'Engenharia', deadline: d(30), status: 'Backlog' })
   actions.push({ action: 'Validar e documentar plano de DR e RPO/RTO', owner: 'Engenharia', deadline: d(45), status: 'Backlog' })
-  actions.push({ action: 'Habilitar monitoramento Kubernetes/RKE', owner: 'Engenharia', deadline: d(30), status: 'Backlog' })
 
   return actions.slice(0, 6)
 }
@@ -146,7 +154,6 @@ function buildRoadmap(_clients: any[]) {
   return {
     thirtyDays: [
       'Integrar Veeam Backup API ao Leonardo CS Cockpit para todos os clientes',
-      'Implementar monitoramento Kubernetes/RKE no Zabbix/Datadog',
       'Resolver todos os chamados críticos abertos da carteira',
       'Revisar e atualizar configurações de Datadog App Key (chave atual inválida)',
       'Mapear hostnames Zabbix por cliente para filtragem precisa por ambiente',
@@ -250,7 +257,6 @@ export async function GET() {
         sqlDirect:  { available: false, reason: 'Integração direta SQL Server não configurada — alertas parciais via Zabbix' },
         yugabyte:   { available: false, reason: 'Integração YugabyteDB não configurada' },
         rabbitmq:   { available: false, reason: 'Integração RabbitMQ não configurada' },
-        kubernetes: { available: false, reason: 'Integração Kubernetes/RKE não configurada' },
         vpnFull:    { available: false, reason: 'Integração VPN não configurada — alertas parciais via Zabbix' },
       },
     }

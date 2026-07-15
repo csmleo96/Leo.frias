@@ -125,7 +125,6 @@ export async function GET(request: NextRequest) {
       // Stop when there is no cursor for the next page (last page)
       nextPageToken = data.nextPageToken ?? undefined
       if (!nextPageToken) break
-      if (allIssues.length >= jiraTotal) break
     }
 
     // Aggregated metrics

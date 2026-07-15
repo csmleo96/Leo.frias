@@ -93,7 +93,9 @@ export async function GET(request: NextRequest) {
 
     // Base query params — forcedisplay field IDs match GLPI's search field numbering
     const baseParams = new URLSearchParams({
-      'sort':                 '15',   // date_mod DESC
+      // Sort/field IDs verified against this GLPI's own /listSearchOptions/Ticket — several
+      // were wrong (fields 15/19 and 4/5 are swapped from what earlier comments assumed).
+      'sort':                 '19',   // date_mod DESC (field 19 = "Última atualização")
       'order':                'DESC',
       'is_deleted':           '0',
       'forcedisplay[0]':      '2',    // ticket id
@@ -101,15 +103,17 @@ export async function GET(request: NextRequest) {
       'forcedisplay[2]':      '12',   // status
       'forcedisplay[3]':      '3',    // priority
       'forcedisplay[4]':      '14',   // type (incident / request)
-      'forcedisplay[5]':      '15',   // date_mod
-      'forcedisplay[6]':      '4',    // _users_id_assign (TECHNICIAN — was wrongly 5)
-      'forcedisplay[7]':      '5',    // users_id_recipient (REQUESTER)
-      'forcedisplay[8]':      '19',   // date_creation
+      'forcedisplay[5]':      '19',   // date_mod ("Última atualização")
+      'forcedisplay[6]':      '5',    // Técnico (assigned technician)
+      'forcedisplay[7]':      '4',    // Requerente (requester)
+      'forcedisplay[8]':      '15',   // date_creation ("Data de abertura")
       'forcedisplay[9]':      '7',    // itilcategories_id
       'forcedisplay[10]':     '80',   // groups_id
       'forcedisplay[11]':     '17',   // solvedate
-      'forcedisplay[12]':     '18',   // closedate
-      'forcedisplay[13]':     '21',   // time_to_resolve (SLA deadline)
+      'forcedisplay[12]':     '16',   // closedate (field 18 was wrongly used for this — verified
+                                       // via GLPI's own /listSearchOptions/Ticket: 18 is time_to_resolve, 16 is closedate)
+      'forcedisplay[13]':     '18',   // time_to_resolve (SLA deadline) — field 21 is actually
+                                       // the ticket's description/content, not a date at all
     })
 
     // Apply optional filters
@@ -149,16 +153,16 @@ export async function GET(request: NextRequest) {
     const nowMs = Date.now()
 
     const tickets = items.map((t: any) => {
-      const assignedToId = t[4] ? Number(t[4]) : null    // technician (field 4)
-      const requesterId  = t[5] ? Number(t[5]) : null    // requester  (field 5)
+      const assignedToId = t[5] ? Number(t[5]) : null    // technician (field 5 = "Técnico")
+      const requesterId  = t[4] ? Number(t[4]) : null    // requester  (field 4 = "Requerente")
       const categoryId   = Number(t[7])  || 0
       const groupId      = Number(t[80]) || 0
 
-      const createdMs    = t[19] ? new Date(String(t[19])).getTime() : nowMs
-      const modMs        = t[15] ? new Date(String(t[15])).getTime() : nowMs
+      const createdMs    = t[15] ? new Date(String(t[15])).getTime() : nowMs
+      const modMs        = t[19] ? new Date(String(t[19])).getTime() : nowMs
       const solvedMs     = t[17] ? new Date(String(t[17])).getTime() : null
-      const closedMs     = t[18] ? new Date(String(t[18])).getTime() : null
-      const slaDeadlineMs= t[21] ? new Date(String(t[21])).getTime() : null
+      const closedMs     = t[16] ? new Date(String(t[16])).getTime() : null
+      const slaDeadlineMs= t[18] ? new Date(String(t[18])).getTime() : null
 
       const daysOpen     = Math.floor((nowMs - createdMs) / 86_400_000)
       const resolveTime  = solvedMs ? Math.floor((solvedMs - createdMs) / 86_400_000) : null
@@ -177,16 +181,16 @@ export async function GET(request: NextRequest) {
         priorityLabel: PRIORITY_LABEL[Number(t[3])] ?? 'Média',
         type:         Number(t[14]) || 1,
         typeLabel:    TYPE_LABEL[Number(t[14])] ?? 'Incidente',
-        dateMod:      t[15] ?? null,
-        dateCreation: t[19] ?? null,
+        dateMod:      t[19] ?? null,
+        dateCreation: t[15] ?? null,
         solveDate:    t[17] ?? null,
-        closeDate:    t[18] ?? null,
-        slaDeadline:  t[21] ?? null,
+        closeDate:    t[16] ?? null,
+        slaDeadline:  t[18] ?? null,
         slaBreached,
         daysOpen,
         daysSinceUpdate: Math.floor((nowMs - modMs) / 86_400_000),
         resolveTimeDays: resolveTime,
-        // FIX: technician = field 4, requester = field 5
+        // technician = field 5 ("Técnico"), requester = field 4 ("Requerente")
         assignedTo:   assignedToId,
         requester:    requesterId,
         // Legacy alias kept for backward compat with any consumers

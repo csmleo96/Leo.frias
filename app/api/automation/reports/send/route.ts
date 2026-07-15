@@ -34,25 +34,29 @@ async function collectAllData() {
     safeGet(`${base}/api/datadog`),
   ])
 
+  // Reuse the stats already computed by /api/glpi and /api/jira (same rules used by
+  // the dashboard and the Farol/Portfolio reports) instead of re-deriving open/critical
+  // with different thresholds — that drift is what caused numbers to disagree across reports.
   const glpiTickets: any[] = glpiRes?.tickets ?? []
   const glpiStats = glpiRes?.stats ?? {}
   const glpi = {
     total:      glpiStats.total ?? glpiTickets.length,
-    abertos:    glpiTickets.filter(t => t.status <= 2).length,
-    criticos:   glpiTickets.filter(t => t.priority >= 4 && t.status <= 4).length,
-    pendentes:  glpiTickets.filter(t => t.status === 4).length,
+    abertos:    glpiStats.open ?? 0,
+    criticos:   glpiStats.critical ?? 0,
+    pendentes:  glpiStats.pending ?? 0,
     resolvidos: (glpiStats.solved ?? 0) + (glpiStats.closed ?? 0),
     novosHoje:  glpiTickets.filter(t => t.daysOpen === 0).length,
   }
 
   const jiraIssues: any[] = jiraRes?.issues ?? []
+  const jiraSummary = jiraRes?.summary ?? {}
   const jira = {
     total:      jiraIssues.length,
-    ativos:     jiraIssues.filter(i => i.statusCategory !== 'done').length,
-    risco:      jiraIssues.filter(i => i.daysRemaining !== null && i.daysRemaining < 0).length,
-    semana:     jiraIssues.filter(i => i.daysRemaining !== null && i.daysRemaining >= 0 && i.daysRemaining <= 7).length,
-    concluidos: jiraIssues.filter(i => i.statusCategory === 'done').length,
-    criticos:   jiraIssues.filter(i => ['Highest', 'High'].includes(i.priority)).length,
+    ativos:     jiraSummary.open ?? 0,
+    risco:      jiraSummary.overdue ?? 0,
+    semana:     jiraSummary.dueSoon ?? 0,
+    concluidos: jiraSummary.done ?? 0,
+    criticos:   jiraSummary.critical ?? 0,
     projetos:   [...new Set(jiraIssues.map((i: any) => i.project?.name).filter(Boolean))] as string[],
   }
 

@@ -252,7 +252,7 @@ function clientSection(cl: any): string {
   const z     = cl.zabbix ?? {}
   const gl    = cl.glpi ?? {}
   const ji    = cl.jira ?? {}
-  const dd    = cl.datadog ?? {}
+  const dd    = cl.datadog ?? null
   const bd    = cl.healthScoreBreakdown ?? {}
   const svc   = cl.serviceMetrics ?? {}
   const avail = z.availability ?? 100
@@ -287,8 +287,15 @@ function clientSection(cl: any): string {
     ['Memória', memProbs.length ? `<span style="color:var(--yel);font-weight:700">${memProbs.length} alerta(s)</span>` : ok],
     ['Storage', storProbs.length ? `<span class="td">${storProbs.length} alerta(s)</span>` : ok],
     ['VPN / Links', vpnProbs.length ? `<span class="td">${vpnProbs.length} alerta(s)</span>` : ok],
-    ['Datadog Monitors', dd.configured ? `${dd.summary?.ok ?? '—'} OK · ${dd.summary?.warn ?? '—'} Warn · ${dd.summary?.alert ?? '—'} Alert` : 'Não configurado'],
   ]
+  // Datadog só está configurado para ConnectPSP — não poluir o relatório dos demais clientes.
+  if (dd) {
+    infraRows.push(['Datadog Monitors', dd.alert > 0
+      ? `<span class="td">${dd.ok} OK · ${dd.warn} Warn · ${dd.alert} Alert</span>`
+      : dd.warn > 0
+        ? `<span style="color:var(--yel);font-weight:700">${dd.ok} OK · ${dd.warn} Warn</span>`
+        : `<span class="tu">${dd.ok} OK · ${dd.totalMonitors} monitors</span>`])
+  }
 
   const mtta    = svc.mtta ?? 'N/D'
   const slaText = svc.sla ?? 'N/D'
@@ -365,16 +372,11 @@ function clientSection(cl: any): string {
         <thead><tr><th>Sistema</th><th>Status</th><th>Fonte</th></tr></thead>
         <tbody>
           <tr><td><strong>SQL Server</strong></td><td>${sqlStatus}</td><td style="color:var(--teal);font-size:.72rem">Zabbix (parcial)</td></tr>
-          <tr><td><strong>YugabyteDB</strong></td><td class="tf">⚪ N/D</td><td style="color:var(--teal);font-size:.72rem">Integração pendente</td></tr>
-          <tr><td><strong>RabbitMQ</strong></td><td class="tf">⚪ N/D</td><td style="color:var(--teal);font-size:.72rem">Integração pendente</td></tr>
         </tbody>
       </table>
 
       <div class="sst" style="margin-top:1.2rem">Infraestrutura</div>
       <table class="it"><tbody>${itRows(infraRows)}</tbody></table>
-
-      <div class="sst">Kubernetes / RKE</div>
-      <div class="nd-box-gray"><span class="nd-title-gray">N/D — </span>Integração K8s/RKE não configurada. Nodes, control plane, pods e CrashLoopBackOff indisponíveis.</div>
 
       <div class="sst">Backup &amp; Continuidade</div>
       <div class="g2" style="margin-top:.25rem">
@@ -384,8 +386,9 @@ function clientSection(cl: any): string {
 
       <div class="sst">Service Desk — GLPI + Jira</div>
       <table class="it"><tbody>${itRows(sdRows)}</tbody></table>
+      <div class="csg" style="margin-top:.4rem">Lista completa de chamados e atividades desta e das demais contas: seção "Atividades Jira" e "Chamados GLPI" no final do relatório.</div>
 
-      <div class="sst">Principais Riscos</div>
+      <div class="sst" style="margin-top:1rem">Principais Riscos</div>
       <div class="rr">${riskRows || '<span class="rt rl2">BAIXO — Nenhum risco crítico identificado</span>'}</div>
 
       <div class="sst">Plano de Ação</div>
@@ -446,20 +449,84 @@ function buildHTML360(portfolioData: any, hsData: any): string {
 
   const farolTableRows = clients.map((cl: any) => {
     const avail = cl.zabbix?.availability
-    const sla   = cl.serviceMetrics?.sla ?? 'N/D'
-    const slaCl = sla === 'Em Risco' ? 'style="color:var(--red);font-weight:700"' : sla === 'Atenção' ? 'style="color:var(--yel);font-weight:700"' : 'style="color:var(--grn);font-weight:700"'
     const ac    = cl.slug ?? cl.name.toLowerCase().replace(/\s/g, '-')
+
+    const z = cl.zabbix ?? {}
+    const zabbixCell = z.hostsTotal != null
+      ? `<span ${(z.disaster ?? 0) > 0 ? 'class="td"' : (z.high ?? 0) > 0 ? 'style="color:var(--yel);font-weight:700"' : 'class="tu"'}>${z.totalProblems ?? 0} ativo${z.totalProblems === 1 ? '' : 's'}</span><div class="cs">${z.hostsUp ?? '—'}/${z.hostsTotal} hosts up</div>`
+      : '—'
+
+    const ji = cl.jira ?? {}
+    const jiraCell = cl.jira
+      ? `<span ${(ji.overdue ?? 0) > 0 ? 'class="td"' : 'class="tu"'}>${ji.open ?? 0} abertos</span><div class="cs">${ji.overdue ?? 0} vencidos · ${ji.critical ?? 0} críticos</div>`
+      : '—'
+
+    const gl = cl.glpi ?? {}
+    const glpiCell = cl.glpi
+      ? `<span ${(gl.critical ?? 0) > 0 ? 'class="td"' : 'class="tu"'}>${gl.open ?? 0} abertos</span><div class="cs">${gl.critical ?? 0} críticos</div>`
+      : '—'
+
     return `<tr>
       <td><div class="cn"><a href="#${ac}" style="color:var(--near-w);text-decoration:none">${cl.name}</a></div><div class="cs">${cl.farolReason}</div></td>
       <td>${farolBadge(cl.farol)}</td>
-      <td ${slaCl}>${sla}</td>
       <td ${avail != null ? `style="color:${availColor(avail)};font-weight:700"` : ''}>${avail != null ? avail + '%' : '—'}</td>
-      <td style="color:var(--teal)">N/D</td>
-      <td style="color:var(--teal)">N/D</td>
-      <td style="color:var(--teal)">⚪ N/D</td>
-      <td style="color:var(--teal)">N/D</td>
-      <td>${cl.zabbix?.totalProblems ?? '—'} ativos</td>
-      <td>${(cl.glpi?.open ?? 0) + (cl.jira?.open ?? 0)} abertos</td>
+      <td>${zabbixCell}</td>
+      <td>${jiraCell}</td>
+      <td>${glpiCell}</td>
+    </tr>`
+  }).join('')
+
+  // ── Atividades Jira e Chamados GLPI — carteira completa (fim do relatório) ──
+  const allJiraOpen = clients.flatMap((cl: any) =>
+    (cl.jira?.openDetails ?? []).map((i: any) => ({ ...i, clientName: cl.name }))
+  ).sort((a: any, b: any) => (a.daysRemaining ?? Infinity) - (b.daysRemaining ?? Infinity))
+
+  const allGlpiOpen = clients.flatMap((cl: any) =>
+    (cl.glpi?.openDetails ?? []).map((t: any) => ({ ...t, clientName: cl.name }))
+  ).sort((a: any, b: any) => (b.priority ?? 0) - (a.priority ?? 0) || (b.daysOpen ?? 0) - (a.daysOpen ?? 0))
+
+  const jiraMasterRows = allJiraOpen.map((i: any) => {
+    const dr = i.daysRemaining
+    const hasDue = i.dueDate != null
+    const dCls = dr != null && dr < 0 ? 'td' : dr != null && dr <= 7 ? '' : 'tu'
+    const dStyle = dr != null && dr >= 0 && dr <= 7 ? 'style="color:var(--yel);font-weight:700"' : ''
+    const dLabel = !hasDue ? 'Sem prazo definido' : dr! < 0 ? `${Math.abs(dr!)}d vencido` : `${dr}d restantes`
+    const dueFmt = hasDue ? new Date(i.dueDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—'
+    const prioCls = ['Highest', 'High'].includes(i.priority) ? 'td' : i.priority === 'Medium' ? '' : 'tf'
+    return `<tr>
+      <td style="white-space:nowrap;color:var(--light)">${i.clientName}</td>
+      <td><a href="${i.url}" style="color:var(--accent);text-decoration:none">${i.summary ?? '—'}</a></td>
+      <td style="white-space:nowrap;color:var(--light)">${i.assignee ?? 'Sem responsável'}</td>
+      <td style="white-space:nowrap"><span class="bnd">${i.status ?? '—'}</span></td>
+      <td style="white-space:nowrap">${hasDue ? `${dueFmt} · ` : ''}<span class="${dCls}" ${dStyle}>${dLabel}</span></td>
+      <td><span class="${prioCls}">${i.priority ?? '—'}</span></td>
+    </tr>`
+  }).join('')
+
+  const glpiMasterRows = allGlpiOpen.map((t: any) => {
+    const prioCls = t.priority >= 5 ? 'td' : t.priority === 4 ? '' : 'tf'
+    const prioStyle = t.priority === 4 ? 'style="color:var(--yel);font-weight:700"' : ''
+    const resp = t.assignedTo ? `Técnico #${t.assignedTo}` : 'Não atribuído'
+
+    // Real SLA deadline (time_to_resolve) when GLPI has one assigned to this ticket —
+    // not every ticket has an SLA policy, so this is honestly absent for most.
+    let prazo = '<span class="tf">Sem SLA definido</span>'
+    if (t.slaDeadline) {
+      const daysLeft = Math.ceil((new Date(t.slaDeadline).getTime() - Date.now()) / 86_400_000)
+      const dCls = daysLeft < 0 ? 'td' : daysLeft <= 2 ? '' : 'tu'
+      const dStyle = daysLeft >= 0 && daysLeft <= 2 ? 'style="color:var(--yel);font-weight:700"' : ''
+      const dLabel = daysLeft < 0 ? `${Math.abs(daysLeft)}d vencido` : `${daysLeft}d restantes`
+      const dueFmt = new Date(t.slaDeadline).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+      prazo = `${dueFmt} · <span class="${dCls}" ${dStyle}>${dLabel}</span>`
+    }
+
+    return `<tr>
+      <td style="white-space:nowrap;color:var(--light)">${t.clientName}</td>
+      <td>#${t.id} — ${(t.title ?? '(sem título)').slice(0, 55)}</td>
+      <td style="white-space:nowrap;color:var(--light)">${resp}</td>
+      <td style="white-space:nowrap"><span class="bnd">${t.statusLabel ?? '—'}</span></td>
+      <td style="white-space:nowrap">${prazo}</td>
+      <td><span class="${prioCls}" ${prioStyle}>${t.priorityLabel ?? '—'}</span></td>
     </tr>`
   }).join('')
 
@@ -498,6 +565,8 @@ function buildHTML360(portfolioData: any, hsData: any): string {
   ${navLinks}
   <a href="#consol">Consolidado</a>
   <a href="#diretor">Diretoria</a>
+  <a href="#jira-geral">Jira</a>
+  <a href="#glpi-geral">GLPI</a>
 </nav>
 
 <!-- CAPA -->
@@ -538,13 +607,12 @@ function buildHTML360(portfolioData: any, hsData: any): string {
 <div id="farol" class="bg"><div class="sec">
   <div class="ey">Farol Executivo</div>
   <div class="st">Visão Consolidada — Ordenado por Criticidade</div>
-  <div class="sd">🔴 Críticos primeiro · 🟡 Atenção · 🟢 Saudáveis · ⚪ Integração pendente</div>
+  <div class="sd">🔴 Críticos primeiro · 🟡 Atenção · 🟢 Saudáveis</div>
   <div class="tbl-wrap">
   <table class="ft">
     <thead><tr>
-      <th>Cliente</th><th>Status</th><th>SLA</th><th>Disponib.</th>
-      <th>Backup</th><th>DR</th><th>Banco XCMG</th><th>Kubernetes</th>
-      <th>Zabbix</th><th>Suporte</th>
+      <th>Cliente</th><th>Status</th><th>Disponib.</th>
+      <th>Zabbix</th><th>Jira</th><th>GLPI</th>
     </tr></thead>
     <tbody>${farolTableRows}</tbody>
   </table>
@@ -604,12 +672,41 @@ ${clients.map((cl: any) => clientSection(cl)).join('')}
         <li>Backup Gerenciado Veeam (BaaS) — todos os clientes</li>
         <li>NOC 24x7 — clientes com score &lt;80</li>
         <li>Integração XCMG — módulo de banco para todos</li>
-        <li>Kubernetes/RKE Gerenciado — observabilidade full-stack</li>
         <li>Pipeline HubSpot: ${pipeline} em aberto · Win rate ${winRate}</li>
       </ul>
     </div>
   </div>
 </div>
+</div></div>
+<div class="div"></div>
+
+<!-- ATIVIDADES JIRA — CARTEIRA COMPLETA -->
+<div id="jira-geral" class="bw"><div class="sec">
+  <div class="ey">Service Desk — Jira</div>
+  <div class="st">Atividades Jira em Aberto — Carteira Completa</div>
+  <div class="sd">${allJiraOpen.length} atividade(s) em aberto em todos os clientes · mais urgentes primeiro</div>
+  ${jiraMasterRows ? `
+  <div class="tbl-wrap">
+    <table class="ft">
+      <thead><tr><th>Cliente</th><th>Atividade</th><th>Responsável</th><th>Andamento</th><th>Prazo</th><th>Criticidade</th></tr></thead>
+      <tbody>${jiraMasterRows}</tbody>
+    </table>
+  </div>` : '<div class="nd-box-gray"><span class="nd-title-gray">Nenhuma — </span>Sem atividades Jira em aberto na carteira.</div>'}
+</div></div>
+<div class="div"></div>
+
+<!-- CHAMADOS GLPI — CARTEIRA COMPLETA -->
+<div id="glpi-geral" class="bg"><div class="sec">
+  <div class="ey">Service Desk — GLPI</div>
+  <div class="st">Chamados GLPI Abertos — Carteira Completa</div>
+  <div class="sd">${allGlpiOpen.length} chamado(s) em aberto em todos os clientes · mais críticos e mais antigos primeiro</div>
+  ${glpiMasterRows ? `
+  <div class="tbl-wrap">
+    <table class="ft">
+      <thead><tr><th>Cliente</th><th>Chamado</th><th>Responsável</th><th>Andamento</th><th>Prazo</th><th>Criticidade</th></tr></thead>
+      <tbody>${glpiMasterRows}</tbody>
+    </table>
+  </div>` : '<div class="nd-box-gray"><span class="nd-title-gray">Nenhum — </span>Sem chamados GLPI em aberto na carteira.</div>'}
 </div></div>
 
 <footer>

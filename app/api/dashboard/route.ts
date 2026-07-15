@@ -8,13 +8,15 @@ function pct(a: number, b: number) { return b > 0 ? Math.round((a / b) * 100) : 
 export async function GET() {
   const sb = await createClient()
 
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+
   // Parallel fetch all data
   const [glpiRes, jiraRes, zabbixRes, operacoesSyncRes, hubspotData] = await Promise.all([
-    fetch('http://localhost:3000/api/glpi', { cache: 'no-store' }).then(r => r.json()).catch(() => ({})),
-    fetch('http://localhost:3000/api/jira', { cache: 'no-store' }).then(r => r.json()).catch(() => ({})),
-    fetch('http://localhost:3000/api/zabbix', { cache: 'no-store' }).then(r => r.json()).catch(() => ({})),
-    fetch('http://localhost:3000/api/operacoes', { cache: 'no-store' }).then(r => r.json()).catch(() => []),
-    fetch('http://localhost:3000/api/hubspot/dashboard', { cache: 'no-store' }).then(r => r.json()).catch(() => ({})),
+    fetch(`${base}/api/glpi`, { cache: 'no-store' }).then(r => r.json()).catch((e) => { console.error('[dashboard] glpi fetch failed:', e.message); return {} }),
+    fetch(`${base}/api/jira`, { cache: 'no-store' }).then(r => r.json()).catch((e) => { console.error('[dashboard] jira fetch failed:', e.message); return {} }),
+    fetch(`${base}/api/zabbix`, { cache: 'no-store' }).then(r => r.json()).catch((e) => { console.error('[dashboard] zabbix fetch failed:', e.message); return {} }),
+    fetch(`${base}/api/operacoes`, { cache: 'no-store' }).then(r => r.json()).catch(() => []),
+    fetch(`${base}/api/hubspot/dashboard`, { cache: 'no-store' }).then(r => r.json()).catch((e) => { console.error('[dashboard] hubspot fetch failed:', e.message); return {} }),
   ])
 
   const glpiData = glpiRes || {}
@@ -43,8 +45,10 @@ export async function GET() {
   const jiraTotal = jiraTicketList.length
   const totalTickets = glpiTotal + jiraTotal
 
-  const glpiCritical = glpiTicketList.filter(t => t.priority === 5).length
-  const jiraCritical = jiraTicketList.filter(t => t.priority_num >= 5).length
+  // Critical = open ticket with high priority — matches the definition used by
+  // /api/glpi, /api/jira and /api/reports/client/[slug] (Farol/Portfolio reports).
+  const glpiCritical = glpiTicketList.filter(t => t.status < 5 && t.priority >= 5).length
+  const jiraCritical = jiraTicketList.filter(t => t.status_category !== 'done' && t.priority_num >= 5).length
   const totalCritical = glpiCritical + jiraCritical
 
   const glpiBreached = glpiTicketList.filter(t => t.sla_status === 'breached').length
@@ -69,7 +73,7 @@ export async function GET() {
     hostsTotal: zabbixStats.hostsTotal || 0,
     hostsUp: zabbixStats.hostsUp || 0,
     hostsDown: zabbixStats.hostsDown || 0,
-    availability: zabbixStats.availability || 100,
+    availability: zabbixStats.availability ?? null,
     criticalProblems: zabbixStats.disaster || 0,
     highProblems: zabbixStats.high || 0,
   }
