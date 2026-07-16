@@ -1,8 +1,6 @@
 {
   "crons": [
-    { "path": "/api/operacoes/sync",               "schedule": "30 11 * * 1-5" },
-    { "path": "/api/notifications/farol",          "schedule": "0 12 * * 1-5"  },
-    { "path": "/api/notifications/farol?retry=2",  "schedule": "5 12 * * 1-5"  },
-    { "path": "/api/notifications/farol?retry=3",  "schedule": "10 12 * * 1-5" }
+    { "path": "/api/operacoes/sync",      "schedule": "45 11 * * 1-5" },
+    { "path": "/api/notifications/farol", "schedule": "0 12 * * 1-5"  }
   ]
 }

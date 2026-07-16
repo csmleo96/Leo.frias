@@ -208,11 +208,6 @@ footer{background:var(--bg2);border-top:1px solid rgba(110,162,168,.12);padding:
 footer p{color:var(--teal);font-size:.73rem;}
 footer span{color:var(--accent);}
 
-/* ── Roadmap cards ── */
-.road-card{background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(110,162,168,.15);border-radius:var(--radius-card);overflow:hidden;box-shadow:var(--glow-sm);}
-.road-head{padding:1rem 1.4rem;font-weight:700;font-size:.9rem;color:var(--bg);font-family:'Space Grotesk',system-ui,sans-serif;letter-spacing:.02em;}
-.road-body{padding:1.25rem 1.4rem;}
-
 @media(max-width:640px){.sec{padding:2rem 1rem;}.cb{padding:1rem 1.25rem;}.ch{padding:1.1rem 1.25rem;}.db{padding:1.5rem;}}
 `
 
@@ -528,17 +523,6 @@ function buildHTML360(portfolioData: any, hsData: any): string {
   const pipeline = ov.openPipeline ? 'R$ ' + ov.openPipeline.toLocaleString('pt-BR', { minimumFractionDigits: 0 }) : 'N/D'
   const winRate  = ov.winRate != null ? ov.winRate + '%' : '—'
 
-  const roadmap = portfolioData.roadmap ?? {}
-  const mkRoadItem = (bg: string, num: string, cat: string, text: string) =>
-    `<div style="display:flex;gap:.65rem;margin-bottom:.8rem;align-items:flex-start">
-      <div style="width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:700;flex-shrink:0;margin-top:2px;background:${bg};color:#0A1316">${num}</div>
-      <div><div style="font-size:.7rem;color:var(--accent);font-weight:700;margin-bottom:.12rem">${cat}</div><div style="font-size:.79rem;color:var(--near-w)">${text}</div></div>
-    </div>`
-
-  const road30 = (roadmap.thirtyDays ?? []).slice(0, 5).map((t: string, i: number) => mkRoadItem('#6EA2A8', String(i + 1), '30 dias', t)).join('')
-  const road60 = (roadmap.sixtyDays ?? []).slice(0, 5).map((t: string, i: number) => mkRoadItem('#8FBFC2', String(i + 1), '60 dias', t)).join('')
-  const road90 = (roadmap.ninetyDays ?? []).slice(0, 5).map((t: string, i: number) => mkRoadItem('#B9DBDC', String(i + 1), '90 dias', t)).join('')
-
   const dash = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
   return `<!DOCTYPE html>
@@ -557,7 +541,6 @@ function buildHTML360(portfolioData: any, hsData: any): string {
   <a href="#resumo">Resumo</a>
   <a href="#farol">Farol</a>
   ${navLinks}
-  <a href="#consol">Consolidado</a>
   <a href="#diretor">Diretoria</a>
   <a href="#jira-geral">Jira</a>
   <a href="#glpi-geral">GLPI</a>
@@ -615,27 +598,6 @@ function buildHTML360(portfolioData: any, hsData: any): string {
 <div class="div"></div>
 
 ${clients.map((cl: any) => clientSection(cl)).join('')}
-
-<!-- CONSOLIDADO -->
-<div id="consol" class="bw"><div class="sec">
-  <div class="ey">Visão Consolidada</div>
-  <div class="st">Roadmap &amp; Comercial</div>
-  <div class="g2" style="margin-bottom:2rem">
-    <div class="road-card">
-      <div class="road-head" style="background:var(--accent)">→ 30 dias</div>
-      <div class="road-body">${road30 || '<p style="color:var(--teal);font-size:.8rem">Sem itens</p>'}</div>
-    </div>
-    <div class="road-card">
-      <div class="road-head" style="background:var(--teal-d);color:var(--near-w)">→ 60 dias</div>
-      <div class="road-body">${road60 || '<p style="color:var(--teal);font-size:.8rem">Sem itens</p>'}</div>
-    </div>
-    <div class="road-card">
-      <div class="road-head" style="background:var(--bg4);color:var(--light)">→ 90 dias</div>
-      <div class="road-body">${road90 || '<p style="color:var(--teal);font-size:.8rem">Sem itens</p>'}</div>
-    </div>
-  </div>
-</div></div>
-<div class="div"></div>
 
 <!-- DIRETOR -->
 <div id="diretor" class="bg"><div class="sec">
